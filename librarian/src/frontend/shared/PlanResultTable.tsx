@@ -30,7 +30,13 @@ function resolveMatchedRule(
   plan: any,
   rules: any[],
 ): { label: string; pattern?: string } | undefined {
-  if (plan.status !== "ok" && plan.status !== "error") {
+  // Most skips are decided before any rule is matched, so they carry no rule
+  // and get no label; a skip that does name one is shown like an error is
+  if (
+    plan.status !== "ok" &&
+    plan.status !== "error" &&
+    !(plan.status === "skipped" && plan.matchedRule)
+  ) {
     return undefined;
   }
   const ruleId =

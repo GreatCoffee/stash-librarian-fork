@@ -1,6 +1,8 @@
 import React from "react";
 import { useIntl } from "react-intl";
-import { ConditionRow, Condition } from "./ConditionRow.js";
+import { ConditionRow, Condition, fieldLabel } from "./ConditionRow.js";
+import { countableNoun } from "../shared/eligible-entities.js";
+import { findConditionProblems, pathWordSplit } from "../../core/rule-lint.js";
 
 const PluginApi = (window as any).PluginApi;
 const { Form, Button } = PluginApi.libraries.Bootstrap;
@@ -28,6 +30,7 @@ export function ConditionsEditor({
   const intl = useIntl();
   const conditionLogic = value.conditionLogic === "OR" ? "OR" : "AND";
   const conditions = value.conditions || [];
+  const problems = findConditionProblems(conditionLogic, conditions);
 
   return (
     <>
@@ -54,22 +57,62 @@ export function ConditionsEditor({
         {intl.formatMessage({ id: "librarian.conditionsEditor.matchAfter" })}
       </div>
 
-      {conditions.map((condition, index) => (
-        <ConditionRow
-          entityType={entityType}
-          key={index}
-          condition={condition}
-          onChange={(next) => {
-            const nextConditions = conditions.slice();
-            nextConditions[index] = next;
-            onChange({ ...value, conditions: nextConditions });
-          }}
-          onRemove={() => {
-            const nextConditions = conditions.slice();
-            nextConditions.splice(index, 1);
-            onChange({ ...value, conditions: nextConditions });
-          }}
-        />
+      {conditions.map((condition, index) => {
+        const splitTerms = pathWordSplit(condition);
+        return (
+          <React.Fragment key={index}>
+            <ConditionRow
+              entityType={entityType}
+              condition={condition}
+              onChange={(next) => {
+                const nextConditions = conditions.slice();
+                nextConditions[index] = next;
+                onChange({ ...value, conditions: nextConditions });
+              }}
+              onRemove={() => {
+                const nextConditions = conditions.slice();
+                nextConditions.splice(index, 1);
+                onChange({ ...value, conditions: nextConditions });
+              }}
+            />
+            {splitTerms && (
+              <p className="librarian-token-hint text-warning">
+                {intl.formatMessage(
+                  { id: "librarian.conditionRow.pathWordSplit" },
+                  {
+                    count: splitTerms.length,
+                    terms: splitTerms.map((t) => "“" + t + "”").join(", "),
+                  },
+                )}
+              </p>
+            )}
+          </React.Fragment>
+        );
+      })}
+      {problems.map((problem) => (
+        <p
+          key={problem.kind + problem.field + problem.key}
+          className="librarian-token-hint text-warning"
+        >
+          {intl.formatMessage(
+            {
+              id:
+                problem.kind === "always_matches"
+                  ? "librarian.conditionsEditor.alwaysMatches"
+                  : "librarian.conditionsEditor.neverMatches",
+            },
+            {
+              field:
+                fieldLabel(intl, problem.field) +
+                (problem.key ? " “" + problem.key + "”" : ""),
+              entityNoun: countableNoun(
+                intl,
+                entityType || "scenes",
+                problem.kind === "never_matches",
+              ),
+            },
+          )}
+        </p>
       ))}
       <Button
         variant="secondary"

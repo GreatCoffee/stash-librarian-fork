@@ -156,7 +156,13 @@ export function SceneFileInfoBlock({
         )}
         {plan.status === "skipped" && (
           <p className="librarian-token-hint text-muted librarian-organize-hint">
-            {skippedText(intl, plan.reason, plan.excludedBy)}{" "}
+            {skippedText(
+              intl,
+              plan.reason,
+              plan.excludedBy,
+              "scenes",
+              plan.message,
+            )}{" "}
             {plan.reason === "not_organized" && (
               <OrganizeButton
                 scene={effectiveScene}

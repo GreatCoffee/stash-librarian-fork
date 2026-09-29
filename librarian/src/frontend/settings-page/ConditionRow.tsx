@@ -33,6 +33,11 @@ const FIELD_OPTIONS = [
   },
 ];
 
+export function fieldLabel(intl: IntlShape, field: string): string {
+  const option = FIELD_OPTIONS.find((f) => f.value === field);
+  return option ? intl.formatMessage({ id: option.label }) : field;
+}
+
 // Only scenes have groups
 function fieldOptionsFor(entityType?: string) {
   if (adapterFor(entityType).hasGroups) {

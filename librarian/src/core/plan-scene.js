@@ -271,15 +271,19 @@ export function planEntity(rawScene, config, entityType, stashBoxes) {
     );
   }
 
+  // The one skip decided after rule matching, so it is the one that can say
+  // which rule made it. Without that, a keep-everything rule looks like the
+  // default pattern doing nothing
   if (folderMode === "keep" && filenameMode === "keep") {
     return {
       status: "skipped",
       reason: "nothing_to_change",
       message:
-        "both the folder and filename patterns are blank, so this " +
+        "both the folder and filename patterns are {current}, so this " +
         adapter.noun +
         " keeps the path it already has",
       sceneId: sceneView.id,
+      matchedRule: matchedRule ? matchedRule.id || null : null,
       files: [],
     };
   }

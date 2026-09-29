@@ -1263,6 +1263,21 @@ test("an all-blank rule holds its matches back from the default pattern, which i
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.status, "skipped");
   assert.equal(result.reason, "nothing_to_change");
+  // the one skip decided after matching, so it can name the rule that made it
+  assert.equal(result.matchedRule, "leave-alone");
+});
+
+test("the default pattern keeping both folder and name is a skip with no rule to name", () => {
+  const config = baseConfig({
+    defaultPattern: {
+      folderPattern: "{current}",
+      filenamePattern: "{current}",
+    },
+  });
+  const result = planScene(normalOrganizedScene, config);
+  assert.equal(result.reason, "nothing_to_change");
+  assert.equal(result.matchedRule, null);
+  assert.match(result.message, /\{current\}/);
 });
 
 test("re-planning the same raw scene with a changed config yields the new result, which is what the preview's local re-plan relies on", () => {
