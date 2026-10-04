@@ -71,7 +71,19 @@ export const DEFAULT_CONFIG = {
   images: DEFAULT_IMAGES,
   delimiters: { performers: ", ", tags: ", " },
   sanitize: {
+    // Per-segment cap, applied to a rendered segment before the name is
+    // assembled. Cannot enforce the filesystem limit on its own: it never sees
+    // the extension, so a 254-byte segment plus ".mp4" still overflows.
     maxSegmentLength: 255,
+    // Hard cap on the finished filename, extension included, in UTF-8 bytes.
+    // SMB/network filesystems reject a path component at 256 bytes (measured
+    // 254 passes, 256 fails), so this is what actually keeps a rename legal.
+    // 0 disables the cap.
+    maxFilenameBytes: 255,
+    // How many "_1".."_9" suffixes to try when a rendered name is already
+    // claimed by a different scene. 0 disables disambiguation and restores the
+    // old "already belongs to scene N" failure.
+    duplicateSceneSuffix: 9,
     spaceReplacement: "",
   },
 };

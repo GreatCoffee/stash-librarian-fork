@@ -20,7 +20,9 @@ import {
   folderPatternMode,
   filenamePatternMode,
   currentUsage,
+  truncateBasenameForExtension,
 } from "./path-template.js";
+import { disambiguateDuplicateScenes } from "./duplicate-scenes.js";
 import { assignSuffixes } from "./file-ordering.js";
 import { deriveFileTech } from "./file-tech.js";
 import { adapterFor } from "./entity-adapter.js";
@@ -82,8 +84,8 @@ function dataError(
 
 // Used in both the frontend and in the Goja backend so it needs to
 // stay compatible with the limited JS environment the VM provides
-export function planScene(rawScene, config, stashBoxes) {
-  return planEntity(rawScene, config, "scenes", stashBoxes);
+export function planScene(rawScene, config, stashBoxes, options) {
+  return planEntity(rawScene, config, "scenes", stashBoxes, options);
 }
 
 export function storedStashBoxEndpoint(settings, matchedRule) {
@@ -137,7 +139,14 @@ export function configNeedsStashBoxes(config, entityType) {
   });
 }
 
-export function planEntity(rawScene, config, entityType, stashBoxes) {
+// `options.pathOwnerLookup(path, selfId)` is how a caller answers "does some
+// other scene already own this path?". It is injected because the backend can
+// ask Stash and the browser preview cannot: the preview passes a registry built
+// from the paths its own sample query already fetched. Omitting it disables
+// cross-entity disambiguation, which is the correct default for callers that
+// have no way to answer the question.
+export function planEntity(rawScene, config, entityType, stashBoxes, options) {
+  const injectedLookup = options && options.pathOwnerLookup;
   const settings = entitySettings(config, entityType);
   const adapter = adapterFor(entityType);
   const sceneView = normalizeScene(rawScene, entityType);
@@ -511,6 +520,63 @@ export function planEntity(rawScene, config, entityType, stashBoxes) {
   });
 
   const resultByFileId = {};
+  const sanitizeOptions = (config && config.sanitize) || {};
+  const maxFilenameBytes = Number(sanitizeOptions.maxFilenameBytes) || 0;
+  const duplicateSceneSuffix = Number(sanitizeOptions.duplicateSceneSuffix) || 0;
+  // Suffixes and byte trimming interact: adding "_1" can push a name over the
+  // limit, and trimming can collapse two distinct names back into one. So the
+  // order is disambiguate -> trim -> disambiguate again, and a suffix handed out
+  // late wins over clipping, because a clipped name that is still unique beats a
+  // short name that collides.
+  const resolveUniqueBasename = (folder, base, extension, selfId) => {
+    let result = {
+      basenameNoExt: base,
+      collided: false,
+      suffix: "",
+    };
+    if (duplicateSceneSuffix > 0 && typeof injectedLookup === "function") {
+      result = disambiguateDuplicateScenes({
+        folder: folder,
+        basenameNoExt: base,
+        extension: extension,
+        selfId: selfId,
+        maxSuffix: duplicateSceneSuffix,
+        joinPath: joinPath,
+        lookup: injectedLookup,
+      });
+    }
+    if (maxFilenameBytes > 0) {
+      const trimmed = truncateBasenameForExtension(
+        result.basenameNoExt,
+        extension,
+        maxFilenameBytes,
+      );
+      if (trimmed !== result.basenameNoExt && duplicateSceneSuffix > 0) {
+        // Trimming may have merged two names into one; re-check and let the
+        // suffix take precedence over the clip.
+        const recheck = disambiguateDuplicateScenes({
+          folder: folder,
+          basenameNoExt: trimmed,
+          extension: extension,
+          selfId: selfId,
+          maxSuffix: duplicateSceneSuffix,
+          joinPath: joinPath,
+          lookup: injectedLookup,
+        });
+        result = {
+          basenameNoExt: recheck.basenameNoExt,
+          collided: result.collided || recheck.collided,
+          suffix: recheck.suffix || result.suffix,
+          exhausted: recheck.exhausted,
+          skipped: result.skipped || recheck.skipped,
+        };
+      } else {
+        result = Object.assign({}, result, { basenameNoExt: trimmed });
+      }
+    }
+    return result;
+  };
+  const suffixNotices = [];
   groupKeys.forEach((key) => {
     const group = groups[key];
     const suffixed = assignSuffixes(
@@ -524,7 +590,26 @@ export function planEntity(rawScene, config, entityType, stashBoxes) {
       const file = entry.file;
       const current = entry.current;
       const extension = getExtension(current.basename);
-      const basename = s.basenameNoExt + extension;
+      const disambiguated = resolveUniqueBasename(
+        entry.folder,
+        s.basenameNoExt,
+        extension,
+        sceneView.id,
+      );
+      if (disambiguated.collided) {
+        suffixNotices.push(
+          disambiguated.exhausted
+            ? "no free _1.._" +
+                duplicateSceneSuffix +
+                " suffix was available for " +
+                disambiguated.basenameNoExt +
+                extension
+            : "renamed with a " +
+                disambiguated.suffix +
+                " suffix because another scene already uses that name",
+        );
+      }
+      const basename = disambiguated.basenameNoExt + extension;
       const currentFolder = normalizePathForCompare(current.folder);
       const unchanged =
         currentFolder === normalizePathForCompare(entry.folder) &&
@@ -537,6 +622,7 @@ export function planEntity(rawScene, config, entityType, stashBoxes) {
         currentBasename: current.basename,
         currentPath: file.path,
         unchanged: unchanged,
+        duplicateSuffix: disambiguated.suffix,
       };
     });
   });
@@ -588,6 +674,13 @@ export function planEntity(rawScene, config, entityType, stashBoxes) {
         " alone",
     );
   }
+  // De-duplicate: a scene with several copies of one release would otherwise
+  // repeat the same sentence once per file.
+  suffixNotices.forEach((notice) => {
+    if (warnings.indexOf(notice) === -1) {
+      warnings.push(notice);
+    }
+  });
 
   return {
     status: "ok",

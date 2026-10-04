@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useApolloClient } from "@apollo/client";
 import { planEntity } from "../../core/plan-scene.js";
+import { planBatch } from "../shared/occupied-paths.js";
 import { useStashBoxes } from "../shared/StashBoxesContext.js";
 import {
   fetchPreviewRows,
@@ -47,16 +48,10 @@ export function useManualEntityPreview(
   }
 
   // Plans are computed client-side, so a pattern or formatting change only needs
-  // the rows in hand re-planned: no reason to re-query for the same entities
+  // the rows in hand re-planned: no reason to re-query for the same entities.
+  // Re-planned as a batch so the rows see each other's newly claimed names.
   function replan() {
-    setRows(
-      (prev) =>
-        prev &&
-        prev.map((row) => ({
-          scene: row.scene,
-          plan: planEntity(row.scene, config, entityType, boxes),
-        })),
-    );
+    setRows((prev) => (prev ? planBatch(prev, config, entityType, boxes, planEntity) : prev));
   }
 
   const boxesKey = boxes
@@ -76,18 +71,17 @@ export function useManualEntityPreview(
   }, [boxesKey]);
 
   function handleEntityOrganized(entityId: string, patchedEntity: any) {
-    setRows(
-      (prev) =>
-        prev &&
-        prev.map((row) =>
-          row.scene.id === entityId
-            ? {
-                scene: patchedEntity,
-                plan: planEntity(patchedEntity, config, entityType, boxes),
-              }
-            : row,
-        ),
-    );
+    setRows((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      // Swap in the patched entity, then re-plan the batch around it so the row
+      // that just became organized can still see what the others hold.
+      const swapped = prev.map((row) =>
+        row.scene.id === entityId ? { scene: patchedEntity, plan: null } : row,
+      );
+      return planBatch(swapped, config, entityType, boxes, planEntity);
+    });
   }
 
   return { rows, loading, run, replan, handleEntityOrganized };

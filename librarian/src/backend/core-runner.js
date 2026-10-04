@@ -39,8 +39,32 @@ function explainMoveError(entityType, error) {
   );
 }
 
+// Answers planEntity's "does another scene own this path?" by asking Stash. The
+// failure mode matters: a lookup that throws must NOT read as "free", or a
+// transient error would let a rename clobber an existing file. Returning
+// {unknown:true} makes the caller keep the pattern's own name instead.
+export function backendPathOwnerLookup(entityType) {
+  return function pathOwnerLookup(path, selfId) {
+    let owner;
+    try {
+      owner = gqlFindOwnerOfPath(entityType, path);
+    } catch (e) {
+      return { id: null, unknown: true };
+    }
+    if (!owner) {
+      return null;
+    }
+    if (String(owner.id) === String(selfId)) {
+      return null;
+    }
+    return owner;
+  };
+}
+
 export function renameEntity(rawEntity, config, entityType, stashBoxes) {
-  const plan = planEntity(rawEntity, config, entityType, stashBoxes);
+  const plan = planEntity(rawEntity, config, entityType, stashBoxes, {
+    pathOwnerLookup: backendPathOwnerLookup(entityType),
+  });
 
   if (plan.status !== "ok") {
     return plan;

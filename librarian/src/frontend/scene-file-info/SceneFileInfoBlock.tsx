@@ -3,6 +3,10 @@ import { useApolloClient, gql } from "@apollo/client";
 import { useIntl } from "react-intl";
 import { Link } from "react-router-dom";
 import { planScene } from "../../core/plan-scene.js";
+import {
+  buildOccupiedPaths,
+  previewPathOwnerLookup,
+} from "../shared/occupied-paths.js";
 import { getConfiguration, runRenameTask } from "../shared/stash-api.js";
 import { pollJob, isTerminalStatus } from "../shared/job-poll.js";
 import { StatusBadge } from "../shared/StatusBadge.js";
@@ -87,12 +91,21 @@ export function SceneFileInfoBlock({
     !override && enrichedStudio && enrichedStudio.id === studioId
       ? { ...baseScene, studio: enrichedStudio }
       : baseScene;
-  // null while loading, so {stash_id|from=} resolves nothing rather than
+  // boxesLoading passes null, so {stash_id|from=} resolves nothing rather than
   // resolving against a list we have not actually received yet
+  // This block shows one scene, and the backend renames it with a Stash lookup
+  // for collisions. Without the same lookup here the block would happily show a
+  // name the move is about to reject, so the scene's own file paths seed a
+  // registry and it plans exactly as the backend will.
   const plan: any = planScene(
     effectiveScene,
     config,
     boxesLoading ? null : stashBoxes,
+    {
+      pathOwnerLookup: previewPathOwnerLookup(
+        buildOccupiedPaths([effectiveScene]),
+      ),
+    },
   );
 
   async function handleMoveOne(sceneId: string) {

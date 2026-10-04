@@ -106,7 +106,7 @@ function disarmReservedName(segment) {
   return segment;
 }
 
-function utf8ByteLength(str) {
+export function utf8ByteLength(str) {
   let bytes = 0;
   for (let i = 0; i < str.length; i++) {
     const code = str.charCodeAt(i);
@@ -141,6 +141,112 @@ function truncateToLimits(str, maxBytes, maxUtf16Units) {
     codePoints.pop();
   }
   return "";
+}
+
+// Cut a basename down so that basename + extension fits in maxBytes UTF-8
+// bytes, which is the hard per-component limit SMB/network filesystems enforce.
+// maxSegmentLength cannot do this job: it is applied to the basename WITHOUT the
+// extension, so a 254-byte name plus ".mp4" still exceeds the server's limit and
+// the rename is rejected.
+//
+// Anything this shortens gets a "..." just inside the final "]", so a clipped
+// title is never mistaken for the real one. That marker is what allows a cut to
+// land in the middle of a "[...]" group instead of having to fall back to a group
+// boundary, which would throw away the whole title.
+//
+// Order of operations:
+//   0. no-op when the name already fits
+//   1. drop a "name (2)"-style disambiguation suffix, reserving room for it
+//      because assignSuffixes re-adds it after this function returns
+//   2. hard-cut on a codepoint boundary, ellipsis included in the budget
+//   3. only if the cut would save almost nothing, peel whole "[...]" groups
+export function truncateBasenameForExtension(basename, extension, maxBytes) {
+  const ext = extension || "";
+  const budget = maxBytes - utf8ByteLength(ext);
+  if (!(budget > 0) || utf8ByteLength(basename) <= budget) {
+    return basename;
+  }
+  const ELLIPSIS = "...";
+  // " (2)" costs 5 bytes at a 1-digit index; reserve for a wider index too so a
+  // scene with many files still cannot overflow.
+  const suffixReserve = 5 + String(1e6).length;
+  const effBudget = budget - suffixReserve;
+  const ELLIPSIS_BYTES = utf8ByteLength(ELLIPSIS);
+  const fits = (s) => utf8ByteLength(s) <= effBudget;
+  // tidy() strips trailing dots, so it must run BEFORE the ellipsis is added.
+  const tidy = (s) => s.replace(/[\s\-_.]+$/, "");
+  // A cut usually lands between "[" and "]", leaving the group open. Closing it
+  // matters for more than looks: the |regex= round-trip on the next run parses
+  // balanced brackets, and an unclosed one makes the next plan differ from this
+  // one. So close the group first, then mark it as clipped.
+  const closeGroup = (s) => {
+    const opens = (s.match(/\[/g) || []).length;
+    const closes = (s.match(/\]/g) || []).length;
+    if (opens <= closes) {
+      return s;
+    }
+    return s + "]".repeat(opens - closes);
+  };
+  const markTrimmed = (s) => {
+    const closed = closeGroup(s);
+    if (!closed.endsWith("]")) {
+      return closed;
+    }
+    return closed.slice(0, -1) + ELLIPSIS + "]";
+  };
+  const hardCut = (s) => {
+    const cps = Array.from(s);
+    // markTrimmed swaps the final "]" for "...]", which is one byte more than
+    // the "]" it replaces once the closing bracket is accounted for, so the
+    // room has to cover the ellipsis plus that extra byte.
+    const room = effBudget - ELLIPSIS_BYTES - 1;
+    let used = 0;
+    let out = "";
+    for (let i = 0; i < cps.length; i++) {
+      const step = utf8ByteLength(cps[i]);
+      if (used + step > room) {
+        break;
+      }
+      used += step;
+      out = cps.slice(0, i + 1).join("");
+    }
+    return markTrimmed(tidy(out));
+  };
+  let candidate = basename;
+  // Step 1: a multi-file scene renames to "name (2)", "name (3)" and so on.
+  const noSuffix = candidate.replace(/ \(\d+\)$/, "");
+  if (noSuffix !== candidate && fits(noSuffix)) {
+    return noSuffix;
+  }
+  candidate = noSuffix;
+  if (fits(candidate)) {
+    return tidy(candidate);
+  }
+  // Step 2: cutting inside the last "[...]" group beats dropping that group,
+  // since a partial title still identifies the scene.
+  const cut = hardCut(candidate);
+  if (fits(cut)) {
+    return cut;
+  }
+  // Step 3: the cut saved too little to be worth an ellipsis, so drop whole
+  // trailing groups instead. Nothing was clipped mid-group here, so the
+  // surviving groups get no ellipsis.
+  let guard = 0;
+  while (!fits(candidate) && guard++ < 32) {
+    const lastGroup = candidate.match(/\[[^\]]*\](?!.*\[[^\]]*\])/);
+    if (!lastGroup) {
+      break;
+    }
+    const without = candidate.slice(0, candidate.lastIndexOf(lastGroup[0]));
+    if (!without) {
+      break;
+    }
+    candidate = without;
+  }
+  if (fits(candidate)) {
+    return tidy(candidate);
+  }
+  return cut;
 }
 
 function sanitizeSegmentRaw(segment, sanitizeOptions) {

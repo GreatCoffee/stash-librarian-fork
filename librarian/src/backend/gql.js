@@ -427,6 +427,10 @@ export function gqlFindOwnerOfPath(entityType, path) {
   const result = doQuery(query, {
     entity_filter: { path: { value: path, modifier: "EQUALS" } },
   });
-  const items = result && result.result && result.result.items;
-  return items && items.length > 0 ? items[0] : null;
+  // Stash renamed the field: FindScenesResultType exposes `scenes`, while older
+  // builds used `items`. The query aliases it to `items`, so read both and let
+  // whichever exists answer.
+  const found = result && result.result;
+  const rows = found && (found.scenes || found.items);
+  return rows && rows.length > 0 ? rows[0] : null;
 }

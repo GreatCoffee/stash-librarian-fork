@@ -1,5 +1,6 @@
 import { gql } from "@apollo/client";
 import { planEntity } from "../../core/plan-scene.js";
+import { planBatch, planBatchInto } from "../shared/occupied-paths.js";
 import {
   SCENE_FIELDS,
   GALLERY_FIELDS,
@@ -133,10 +134,9 @@ export function fetchPreviewRows(
     })
     .then(({ data }: any) => {
       const items = (data && data.result && data.result.items) || [];
-      return items.map((entity: any) => ({
-        scene: entity,
-        plan: planEntity(entity, config, entityType, stashBoxes),
-      }));
+      // Planned as a batch so each scene sees the names the ones before it
+      // claimed, matching what the backend will do when it moves them in order.
+      return planBatch(items, config, entityType, stashBoxes, planEntity);
     });
 }
 
@@ -154,6 +154,10 @@ export async function fetchScopedPreviewRows(
   stashBoxes?: any[] | null,
 ) {
   const collected: { scene: any; plan: any }[] = [];
+  // One registry for the whole loop, not one per page: a name claimed on page 1
+  // has to stay claimed on page 3, or the preview would show two scenes
+  // targeting the same file.
+  const registry = new Map<string, any>();
   let page = 1;
   while (collected.length < SAMPLE_SIZE && page <= MAX_SCOPED_PAGES) {
     const { data }: any = await client.query({
@@ -168,10 +172,17 @@ export async function fetchScopedPreviewRows(
     if (items.length === 0) {
       break;
     }
-    for (const entity of items) {
-      const plan = planEntity(entity, config, entityType, stashBoxes);
-      if (!isStolen(plan)) {
-        collected.push({ scene: entity, plan });
+    const rows = planBatchInto(
+      items,
+      config,
+      entityType,
+      stashBoxes,
+      planEntity,
+      registry,
+    );
+    for (const row of rows) {
+      if (!isStolen(row.plan)) {
+        collected.push(row);
         if (collected.length >= SAMPLE_SIZE) {
           break;
         }
