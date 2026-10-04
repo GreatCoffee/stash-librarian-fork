@@ -3,6 +3,16 @@
 A [Stash](https://github.com/stashapp/stash) plugin that renames scene, gallery and image files based on your own
 rules and metadata.
 
+> **This copy is a personal fork, kept as an archive only.**
+> Three behaviours were added with AI assistance: filename length checking before renaming, truncation of
+> `{title}` with a visible `...` marker, and numeric suffixes for split releases that share metadata.
+> The code has not been reviewed by anyone qualified, and its safety cannot be guaranteed.
+> **Please use the [original Librarian](../README.md) instead.**
+>
+> **本副本是个人 fork，仅作留档。** 使用 AI 加入了三项功能：重命名前的文件名长度检查、带 `...` 标记的
+> `{title}` 裁短、以及为元数据相同的多分卷作品添加数字后缀。代码未经任何具备资质者审查，无法保证其安全性。
+> **请改用[原版 Librarian](../README.md)。**
+
 ## Motivation
 
 There are already several options if you're looking for a plugin to rename your files so why choose Librarian?
