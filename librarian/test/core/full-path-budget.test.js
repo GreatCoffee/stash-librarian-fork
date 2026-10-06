@@ -238,6 +238,37 @@ test("short names are untouched by the ceiling", () => {
   );
 });
 
+test("a ceiling looser than the per-name limit leaves the check inert", () => {
+  // A total above perName + folder is a setting that looks enabled and does
+  // nothing: the remainder still lands above the per-name limit, so the per-name
+  // limit is what trims, and the folder above is never counted. The operator
+  // believes they are protected and is not. This test exists so the value the
+  // toggle writes cannot drift back into that range unnoticed.
+  const perName = 255;
+  const probe = resolveFilenameByteBudget({
+    folder: DEEP,
+    maxFilenameBytes: perName,
+    maxFullPathBytes: 300,
+    joinPath: joinPath,
+  });
+  assert.equal(
+    probe.limitedBy,
+    "component",
+    "300 is inert for this folder, which is why the toggle writes 255",
+  );
+  assert.equal(probe.budget, perName);
+
+  // At the value the toggle actually writes, the whole-path branch is taken.
+  const active = resolveFilenameByteBudget({
+    folder: DEEP,
+    maxFilenameBytes: perName,
+    maxFullPathBytes: 255,
+    joinPath: joinPath,
+  });
+  assert.equal(active.limitedBy, "wholePath");
+  assert.equal(active.budget, 255 - active.folderBytes);
+});
+
 test("names settle: a second pass over the ceiling moves nothing", () => {
   // A ceiling that moves the name again on the next run would make the file
   // travel back and forth forever, which is worse than a failed rename.

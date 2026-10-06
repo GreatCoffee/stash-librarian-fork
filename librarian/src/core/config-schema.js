@@ -104,8 +104,18 @@ export const DEFAULT_CONFIG = {
     // filesystem limit, but the ceiling for a total path is set by whatever
     // answers the share, and it has not been measured here. Guessing low would
     // clip titles that are in fact fine; guessing high would leave the setting
-    // looking configured while doing nothing. An operator sets it to the value
-    // their own storage reports.
+    // looking configured while doing nothing, since a large total minus a folder
+    // still lands above the per-component limit and the check never engages.
+    //
+    // The toggle writes 255, the same value the per-name limit uses. Matching
+    // them is what makes the two limits comparable at all: the check only does
+    // work when the folder is long enough for the remainder to fall below the
+    // per-name ceiling.
+    //
+    // Turning this on has a visible cost even before anything moves. It is a
+    // guard for a future layout change, not something to leave enabled: with it
+    // on, every folder byte is subtracted from the title, so a deep folder can
+    // cut a title down to a handful of characters.
     maxFullPathBytes: 0,
     spaceReplacement: "",
   },

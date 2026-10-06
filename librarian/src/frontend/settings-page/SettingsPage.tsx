@@ -466,16 +466,18 @@ function SettingsPageContent() {
                         ...config,
                         sanitize: {
                           ...config.sanitize,
-                          // 300 is the smallest value that leaves the deepest
-                          // folder in this library's own layout untouched while
-                          // still fitting under a 260-byte-style ceiling. It is
-                          // deliberately conservative: an over-generous number
-                          // only wastes title, an over-tight one clips names that
-                          // would have worked.
+                          // 255 is the same ceiling the per-name limit already
+                          // uses, and it is deliberately not a comfortable
+                          // number. A value above 255 would leave the whole-path
+                          // check inert: subtracting a long folder from a large
+                          // total still lands above the per-name limit, so the
+                          // name would be trimmed by that limit alone and the
+                          // folders above it would never be counted. Matching
+                          // the two means the path is measured as a whole.
                           maxFullPathBytes: config.sanitize &&
                             config.sanitize.maxFullPathBytes
                             ? 0
-                            : 300,
+                            : 255,
                         },
                       })
                     }
