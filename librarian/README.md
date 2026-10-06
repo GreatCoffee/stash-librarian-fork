@@ -4,13 +4,17 @@ A [Stash](https://github.com/stashapp/stash) plugin that renames scene, gallery 
 rules and metadata.
 
 > **This copy is a personal fork, kept as an archive only.**
-> Three behaviours were added with AI assistance: filename length checking before renaming, truncation of
-> `{title}` with a visible `...` marker, and numeric suffixes for split releases that share metadata.
+> Four behaviours were added with AI assistance, all of them off by default and controlled by switches in
+> the formatting panel: shortening overlong filenames, marking shortened names with `...`, also limiting
+> the total path length so that moving files deeper cannot break renames, and numeric suffixes for split
+> releases that share metadata.
 > The code has not been reviewed by anyone qualified, and its safety cannot be guaranteed.
 > **Please use the [original Librarian](../README.md) instead.**
 >
-> **本副本是个人 fork，仅作留档。** 使用 AI 加入了三项功能：重命名前的文件名长度检查、带 `...` 标记的
-> `{title}` 裁短、以及为元数据相同的多分卷作品添加数字后缀。代码未经任何具备资质者审查，无法保证其安全性。
+> **本副本是个人 fork，仅作留档。** 使用 AI 加入四项功能，全部默认关闭、由「格式化」栏目中的开关控制：
+> 截短过长的文件名、截短时加 `...` 标记、同时限制完整路径长度（使文件移入更深目录时改名仍能成功）、
+> 以及为元数据相同的多分卷作品添加数字后缀。
+> 代码未经任何具备资质者审查，无法保证其安全性。
 > **请改用[原版 Librarian](../README.md)。**
 
 ## Motivation
