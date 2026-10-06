@@ -143,6 +143,55 @@ function truncateToLimits(str, maxBytes, maxUtf16Units) {
   return "";
 }
 
+// Works out how many bytes the FILENAME may occupy, given the folder it will
+// live in.
+//
+// maxFilenameBytes answers a narrower question than it looks: it bounds one path
+// component, and a path component is only the last segment. Once folderPattern
+// starts nesting scenes into subfolders, the directories above the file are part
+// of the same limit and are not something the filename budget can see. That is
+// why a name that fits perfectly under one layout stops fitting after the layout
+// changes, and why the failure looks arbitrary: only some scenes cross over,
+// and the ones that do were never near the filename limit themselves.
+//
+// So when a whole-path ceiling is configured, the folder is measured and its
+// bytes (plus the separator that will join it to the filename) come off the top
+// before the filename is trimmed. The two ceilings are then both honoured: a
+// filename is allowed min(perComponent, wholePath - folder).
+//
+// Returns a non-positive budget when the folder alone already exhausts the
+// ceiling. No filename can rescue that, and silently trimming to nothing would
+// produce a nameless file, so the caller is expected to warn instead.
+export function resolveFilenameByteBudget({
+  folder,
+  maxFilenameBytes,
+  maxFullPathBytes,
+  joinPath,
+}) {
+  const perComponent = Number(maxFilenameBytes) || 0;
+  const wholePath = Number(maxFullPathBytes) || 0;
+  if (wholePath <= 0) {
+    return { budget: perComponent, limitedBy: "component", folderBytes: 0 };
+  }
+  // joinPath is used rather than a hand-rolled concatenation so the measured
+  // prefix is byte-identical to the one the rename will actually use, separator
+  // style included.
+  const prefix = joinPath ? joinPath(folder, "") : String(folder || "");
+  const folderBytes = utf8ByteLength(prefix) + (prefix ? 1 : 0);
+  const remaining = wholePath - folderBytes;
+  if (remaining <= 0) {
+    return { budget: 0, limitedBy: "folder", folderBytes: folderBytes };
+  }
+  if (perComponent > 0 && remaining < perComponent) {
+    return { budget: remaining, limitedBy: "wholePath", folderBytes: folderBytes };
+  }
+  return {
+    budget: perComponent > 0 ? perComponent : remaining,
+    limitedBy: perComponent > 0 ? "component" : "wholePath",
+    folderBytes: folderBytes,
+  };
+}
+
 // Cut a basename down so that basename + extension fits in maxBytes UTF-8
 // bytes, which is the hard per-component limit SMB/network filesystems enforce.
 // maxSegmentLength cannot do this job: it is applied to the basename WITHOUT the

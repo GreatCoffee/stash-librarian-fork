@@ -292,6 +292,8 @@
   "librarian.settingsPage.formatting.delimiterPlaceholder": ", ",
   "librarian.settingsPage.formatting.maxFilenameBytes.heading": "Überlange Dateinamen kürzen",
   "librarian.settingsPage.formatting.maxFilenameBytes.subHeading": "Netzlaufwerke lehnen Dateinamen über 255 Byte ab, was eine lange Darstellerliste leicht überschreitet. Ist dies eingeschaltet, kürzt Librarian den Namen passend; ausgeschaltet schlagen diese Dateien bei der Umbenennung fehl",
+  "librarian.settingsPage.formatting.maxFullPathBytes.heading": "Gesamte Pfadlänge begrenzen",
+  "librarian.settingsPage.formatting.maxFullPathBytes.subHeading": "Das 255-Byte-Limit gilt nur für den Dateinamen allein. Sobald ein Ordner-Muster Szenen in Unterordner einsortiert, zählen die Verzeichnisse mit, und ein zuvor passender Name passt nicht mehr. Eingeschaltet wird Platz für die Ordner reserviert und der Name um deren Länge gekürzt",
   "librarian.settingsPage.formatting.filenameEllipsis.heading": "Gekürzte Namen markieren",
   "librarian.settingsPage.formatting.filenameEllipsis.subHeading": "Fügt drei Punkte (...) vor der schließenden Klammer ein, damit ein gekürzter Titel nicht für den vollständigen gehalten wird. Ausgeschaltet spart dies drei Bytes, lässt aber keine Unterscheidung zwischen gekürztem und vollständigem Namen zu",
   "librarian.settingsPage.formatting.filenameEllipsis.requiresShortening": "Erfordert, dass „Überlange Dateinamen kürzen“ eingeschaltet ist",

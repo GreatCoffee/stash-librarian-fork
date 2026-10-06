@@ -292,6 +292,8 @@
   "librarian.settingsPage.formatting.delimiterPlaceholder": ", ",
   "librarian.settingsPage.formatting.maxFilenameBytes.heading": "Acortar nombres demasiado largos",
   "librarian.settingsPage.formatting.maxFilenameBytes.subHeading": "Las unidades de red rechazan nombres de archivo de más de 255 bytes, algo que una lista larga de actores puede superar con facilidad. Cuando está activado, Librarian recorta el nombre hasta que quepa; si lo desactiva, esos archivos no se podrán renombrar",
+  "librarian.settingsPage.formatting.maxFullPathBytes.heading": "Limitar también la longitud total de la ruta",
+  "librarian.settingsPage.formatting.maxFullPathBytes.subHeading": "El límite de 255 bytes se aplica solo al nombre de archivo. En cuanto un patrón de carpetas organiza las escenas en subcarpetas, los directorios también consumen ese límite y un nombre que cabía deja de caber. Al activarlo se reserva espacio para las carpetas y el nombre se acorta en esa medida",
   "librarian.settingsPage.formatting.filenameEllipsis.heading": "Marcar los nombres recortados",
   "librarian.settingsPage.formatting.filenameEllipsis.subHeading": "Añade tres puntos (...) antes del corchete de cierre para que un título recortado no se confunda con el completo. Desactivarlo ahorra tres bytes pero impide distinguir un nombre recortado de uno real",
   "librarian.settingsPage.formatting.filenameEllipsis.requiresShortening": "Requiere que «Acortar nombres demasiado largos» esté activado",

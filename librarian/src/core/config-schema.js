@@ -90,6 +90,23 @@ export const DEFAULT_CONFIG = {
     // is what stops the name from overshooting the moment the marker lands.
     // Only meaningful while maxFilenameBytes is non-zero.
     filenameEllipsis: true,
+    // Hard cap on the whole path from the drive root, in UTF-8 bytes, with the
+    // extension included. 0 disables the cap.
+    //
+    // maxFilenameBytes only sees the last path component, so it cannot know
+    // how much room the directories above it already used. That matters as soon
+    // as folderPattern nests scenes: a folderPattern of "{studio}" adds the
+    // studio name to every path, and names that fit under one layout stop
+    // fitting under another. Subtracting the rendered folder from the total
+    // makes the filename yield exactly the space the folders took.
+    //
+    // The default is 0, not a number. The per-component ceiling is a documented
+    // filesystem limit, but the ceiling for a total path is set by whatever
+    // answers the share, and it has not been measured here. Guessing low would
+    // clip titles that are in fact fine; guessing high would leave the setting
+    // looking configured while doing nothing. An operator sets it to the value
+    // their own storage reports.
+    maxFullPathBytes: 0,
     spaceReplacement: "",
   },
 };

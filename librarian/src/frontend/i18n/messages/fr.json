@@ -292,6 +292,8 @@
   "librarian.settingsPage.formatting.delimiterPlaceholder": ", ",
   "librarian.settingsPage.formatting.maxFilenameBytes.heading": "Raccourcir les noms trop longs",
   "librarian.settingsPage.formatting.maxFilenameBytes.subHeading": "Les lecteurs réseau refusent un nom de fichier dépassant 255 octets, ce qu'une longue liste de.performrices peut facilement dépasser. Activé, Librarian raccourcit le nom pour qu'il tienne ; désactivé, ces fichiers ne pourront pas être renommés",
+  "librarian.settingsPage.formatting.maxFullPathBytes.heading": "Limiter aussi la longueur totale du chemin",
+  "librarian.settingsPage.formatting.maxFullPathBytes.subHeading": "La limite de 255 octets ne concerne que le nom de fichier. Dès qu'un motif de dossiers range les scènes dans des sous-dossiers, les répertoires consomment cette même limite et un nom qui tenait ne tient plus. Activé, de la place est réservée aux dossiers et le nom est raccourci d'autant",
   "librarian.settingsPage.formatting.filenameEllipsis.heading": "Marquer les noms raccourcis",
   "librarian.settingsPage.formatting.filenameEllipsis.subHeading": "Ajoute trois points (...) avant le crochet fermant, afin qu'un titre tronqué ne soit pas confondu avec le titre complet. Désactiver économise trois octets, mais ne laisse plus aucun moyen de distinguer un nom raccourci d'un nom réel",
   "librarian.settingsPage.formatting.filenameEllipsis.requiresShortening": "Nécessite que « Raccourcir les noms trop longs » soit activé",

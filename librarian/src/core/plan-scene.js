@@ -21,6 +21,7 @@ import {
   filenamePatternMode,
   currentUsage,
   truncateBasenameForExtension,
+  resolveFilenameByteBudget,
 } from "./path-template.js";
 import { disambiguateDuplicateScenes } from "./duplicate-scenes.js";
 import { assignSuffixes } from "./file-ordering.js";
@@ -522,10 +523,15 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
   const resultByFileId = {};
   const sanitizeOptions = (config && config.sanitize) || {};
   const maxFilenameBytes = Number(sanitizeOptions.maxFilenameBytes) || 0;
+  const maxFullPathBytes = Number(sanitizeOptions.maxFullPathBytes) || 0;
   const duplicateSceneSuffix = Number(sanitizeOptions.duplicateSceneSuffix) || 0;
   // A setting saved by an older build has no filenameEllipsis key at all, so
   // only an explicit false turns the marker off.
   const filenameEllipsis = sanitizeOptions.filenameEllipsis !== false;
+  // Folders whose own path exceeds the whole-path ceiling. Collected rather than
+  // warned about inline because one folder can hold many files, and the message
+  // is about the folder, not each name inside it.
+  const unfixableFolders = new Set();
   // Suffixes and byte trimming interact: adding "_1" can push a name over the
   // limit, and trimming can collapse two distinct names back into one. So the
   // order is disambiguate -> trim -> disambiguate again, and a suffix handed out
@@ -548,11 +554,25 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
         lookup: injectedLookup,
       });
     }
-    if (maxFilenameBytes > 0) {
+    // Two ceilings can apply, and the narrower one wins: the per-component limit
+    // the filesystem enforces on any single name, and the whole-path limit that
+    // also has to cover every directory above the file.
+    const byteBudget = resolveFilenameByteBudget({
+      folder: folder,
+      maxFilenameBytes: maxFilenameBytes,
+      maxFullPathBytes: maxFullPathBytes,
+      joinPath: joinPath,
+    });
+    if (byteBudget.limitedBy === "folder") {
+      // The directories alone already exceed the ceiling. No filename can bring
+      // this under, and trimming toward it would only produce an empty name, so
+      // the name is left intact and the caller surfaces a warning.
+      unfixableFolders.add(normalizePathForCompare(folder));
+    } else if (byteBudget.budget > 0) {
       const trimmed = truncateBasenameForExtension(
         result.basenameNoExt,
         extension,
-        maxFilenameBytes,
+        byteBudget.budget,
         filenameEllipsis,
       );
       if (trimmed !== result.basenameNoExt && duplicateSceneSuffix > 0) {
@@ -684,6 +704,18 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
     if (warnings.indexOf(notice) === -1) {
       warnings.push(notice);
     }
+  });
+  // A folder that busts the whole-path ceiling on its own cannot be fixed by
+  // shortening anything below it, so it is reported per folder rather than per
+  // file. Silently leaving these names long would look like a successful plan
+  // and fail at the filesystem instead.
+  unfixableFolders.forEach((folder) => {
+    warnings.push(
+      "Folder path already exceeds the configured max full path length (" +
+        maxFullPathBytes +
+        " bytes): " +
+        folder,
+    );
   });
 
   return {

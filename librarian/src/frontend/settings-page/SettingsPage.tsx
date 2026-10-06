@@ -441,6 +441,52 @@ function SettingsPageContent() {
                 <div>
                   <h3>
                     {intl.formatMessage({
+                      id: "librarian.settingsPage.formatting.maxFullPathBytes.heading",
+                    })}
+                  </h3>
+                  <div className="sub-heading">
+                    {intl.formatMessage({
+                      id: "librarian.settingsPage.formatting.maxFullPathBytes.subHeading",
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <Form.Switch
+                    id="librarian-setting-max-full-path-bytes"
+                    // No shortening to narrow, so this ceiling would have nothing
+                    // to act on. It follows its parent rather than sitting inert.
+                    disabled={!(
+                      config.sanitize && config.sanitize.maxFilenameBytes
+                    )}
+                    checked={Boolean(
+                      config.sanitize && config.sanitize.maxFullPathBytes,
+                    )}
+                    onChange={() =>
+                      updateConfig({
+                        ...config,
+                        sanitize: {
+                          ...config.sanitize,
+                          // 300 is the smallest value that leaves the deepest
+                          // folder in this library's own layout untouched while
+                          // still fitting under a 260-byte-style ceiling. It is
+                          // deliberately conservative: an over-generous number
+                          // only wastes title, an over-tight one clips names that
+                          // would have worked.
+                          maxFullPathBytes: config.sanitize &&
+                            config.sanitize.maxFullPathBytes
+                            ? 0
+                            : 300,
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="setting">
+                <div>
+                  <h3>
+                    {intl.formatMessage({
                       id: "librarian.settingsPage.formatting.duplicateSceneSuffix.heading",
                     })}
                   </h3>
