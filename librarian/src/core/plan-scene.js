@@ -20,8 +20,9 @@ import {
   folderPatternMode,
   filenamePatternMode,
   currentUsage,
-  truncateBasenameForExtension,
+  fitBasenameToBudget,
   resolveFilenameByteBudget,
+  utf8ByteLength,
 } from "./path-template.js";
 import { disambiguateDuplicateScenes } from "./duplicate-scenes.js";
 import { assignSuffixes } from "./file-ordering.js";
@@ -328,6 +329,22 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
     stashBoxes: stashBoxes || null,
   };
 
+  const sanitizeOptions = (config && config.sanitize) || {};
+  const maxFilenameBytes = Number(sanitizeOptions.maxFilenameBytes) || 0;
+  const maxFullPathBytes = Number(sanitizeOptions.maxFullPathBytes) || 0;
+  // A setting saved by an older build has no filenameEllipsis key at all, so
+  // only an explicit false turns the marker off.
+  const filenameEllipsis = sanitizeOptions.filenameEllipsis !== false;
+  // Folders whose own path exceeds the whole-path ceiling. Collected rather than
+  // warned about inline because one folder can hold many files, and the message
+  // is about the folder, not each name inside it.
+  const unfixableFolders = new Set();
+  // Kept names ({current}) that sit over the byte budget. They are left byte
+  // for byte — a kept name comes off the filesystem, not out of a rendered
+  // token, so there is no {title} value to spend — and each one is reported
+  // rather than left as a silent over-limit name.
+  const keptNameNotices = [];
+
   // We trust Stash's ordering of files: primary file will be first
   const sortedFiles = sceneView.files;
 
@@ -487,6 +504,78 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
       }
     }
 
+    // Two ceilings can apply, and the narrower one wins: the per-component
+    // limit the filesystem enforces on any single name, and the whole-path
+    // limit that also has to cover every directory above the file.
+    const byteBudget = resolveFilenameByteBudget({
+      folder: targetFolder,
+      maxFilenameBytes: maxFilenameBytes,
+      maxFullPathBytes: maxFullPathBytes,
+      joinPath: joinPath,
+    });
+    if (byteBudget.limitedBy === "folder") {
+      // The directories alone already exceed the ceiling. No filename can
+      // bring this under, and trimming toward it would only produce an empty
+      // name, so the name is left intact and the caller surfaces a warning.
+      unfixableFolders.add(normalizePathForCompare(targetFolder));
+    }
+    // Fitting runs per FILE, before grouping: every suffix is appended to an
+    // already fitted name. assignSuffixes (" (2)" for the second copy) and the
+    // cross-scene "_1" both work from the 12-byte headroom the fit leaves, so
+    // "suffix wins over clip" holds by construction and the name that the
+    // disambiguation probes is the name that will actually be written.
+    let fittedBasename = basenameNoExt;
+    if (
+      filenameMode === "render" &&
+      byteBudget.limitedBy !== "folder" &&
+      byteBudget.budget > 0
+    ) {
+      const fit = fitBasenameToBudget({
+        folderPattern: folderPattern,
+        filenamePattern: filenamePattern,
+        sceneView: fileView,
+        config: renderConfig,
+        matchedIds: matchedIds,
+        currentPath: {
+          folder: current.folder,
+          basename: stripExtension(current.basename),
+        },
+        rendered: rendered,
+        extension: getExtension(current.basename),
+        budget: byteBudget.budget,
+        ellipsis: filenameEllipsis,
+      });
+      if (fit.infeasible) {
+        return dataError(
+          "name_budget_infeasible",
+          sceneView.id,
+          matchedRule,
+          folderPattern,
+          filenamePattern,
+          [
+            {
+              token: "title",
+              message: fit.message,
+            },
+          ],
+        );
+      }
+      fittedBasename = fit.basenameNoExt;
+    }
+    if (
+      filenameMode === "keep" &&
+      byteBudget.limitedBy !== "folder" &&
+      byteBudget.budget > 0 &&
+      utf8ByteLength(current.basename) > byteBudget.budget
+    ) {
+      keptNameNotices.push(
+        "kept name exceeds the filename byte budget (" +
+          byteBudget.budget +
+          " bytes) and was left untouched: " +
+          current.basename,
+      );
+    }
+
     perFile.push({
       file: file,
       current: current,
@@ -497,7 +586,7 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
           ? file.parent_folder.id
           : null,
       folder: targetFolder,
-      basenameNoExt: basenameNoExt,
+      basenameNoExt: fittedBasename,
       // Kept names only really collide when the whole name matches, extension
       // included, and suffixing one that does not would be the rename a blank
       // pattern promises never to make. A rendered name is shared by every file
@@ -521,30 +610,16 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
   });
 
   const resultByFileId = {};
-  const sanitizeOptions = (config && config.sanitize) || {};
-  const maxFilenameBytes = Number(sanitizeOptions.maxFilenameBytes) || 0;
-  const maxFullPathBytes = Number(sanitizeOptions.maxFullPathBytes) || 0;
   const duplicateSceneSuffix = Number(sanitizeOptions.duplicateSceneSuffix) || 0;
-  // A setting saved by an older build has no filenameEllipsis key at all, so
-  // only an explicit false turns the marker off.
-  const filenameEllipsis = sanitizeOptions.filenameEllipsis !== false;
-  // Folders whose own path exceeds the whole-path ceiling. Collected rather than
-  // warned about inline because one folder can hold many files, and the message
-  // is about the folder, not each name inside it.
-  const unfixableFolders = new Set();
-  // Suffixes and byte trimming interact: adding "_1" can push a name over the
-  // limit, and trimming can collapse two distinct names back into one. So the
-  // order is disambiguate -> trim -> disambiguate again, and a suffix handed out
-  // late wins over clipping, because a clipped name that is still unique beats a
-  // short name that collides.
+  // The fitted name is unique among the files of this entity. What it cannot
+  // see is every OTHER entity plans the same pattern in the same folder, so a
+  // lookup answers "does some other scene already hold this path?" and the
+  // suffix walks _1.._N until it has a path of its own. The lookup is the same
+  // injected one the render stage cannot call; running it against the Fitted
+  // name is what keeps "clipped but unique" true without a second pass.
   const resolveUniqueBasename = (folder, base, extension, selfId) => {
-    let result = {
-      basenameNoExt: base,
-      collided: false,
-      suffix: "",
-    };
     if (duplicateSceneSuffix > 0 && typeof injectedLookup === "function") {
-      result = disambiguateDuplicateScenes({
+      return disambiguateDuplicateScenes({
         folder: folder,
         basenameNoExt: base,
         extension: extension,
@@ -554,51 +629,7 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
         lookup: injectedLookup,
       });
     }
-    // Two ceilings can apply, and the narrower one wins: the per-component limit
-    // the filesystem enforces on any single name, and the whole-path limit that
-    // also has to cover every directory above the file.
-    const byteBudget = resolveFilenameByteBudget({
-      folder: folder,
-      maxFilenameBytes: maxFilenameBytes,
-      maxFullPathBytes: maxFullPathBytes,
-      joinPath: joinPath,
-    });
-    if (byteBudget.limitedBy === "folder") {
-      // The directories alone already exceed the ceiling. No filename can bring
-      // this under, and trimming toward it would only produce an empty name, so
-      // the name is left intact and the caller surfaces a warning.
-      unfixableFolders.add(normalizePathForCompare(folder));
-    } else if (byteBudget.budget > 0) {
-      const trimmed = truncateBasenameForExtension(
-        result.basenameNoExt,
-        extension,
-        byteBudget.budget,
-        filenameEllipsis,
-      );
-      if (trimmed !== result.basenameNoExt && duplicateSceneSuffix > 0) {
-        // Trimming may have merged two names into one; re-check and let the
-        // suffix take precedence over the clip.
-        const recheck = disambiguateDuplicateScenes({
-          folder: folder,
-          basenameNoExt: trimmed,
-          extension: extension,
-          selfId: selfId,
-          maxSuffix: duplicateSceneSuffix,
-          joinPath: joinPath,
-          lookup: injectedLookup,
-        });
-        result = {
-          basenameNoExt: recheck.basenameNoExt,
-          collided: result.collided || recheck.collided,
-          suffix: recheck.suffix || result.suffix,
-          exhausted: recheck.exhausted,
-          skipped: result.skipped || recheck.skipped,
-        };
-      } else {
-        result = Object.assign({}, result, { basenameNoExt: trimmed });
-      }
-    }
-    return result;
+    return { basenameNoExt: base, collided: false, suffix: "" };
   };
   const suffixNotices = [];
   groupKeys.forEach((key) => {
@@ -701,6 +732,11 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
   // De-duplicate: a scene with several copies of one release would otherwise
   // repeat the same sentence once per file.
   suffixNotices.forEach((notice) => {
+    if (warnings.indexOf(notice) === -1) {
+      warnings.push(notice);
+    }
+  });
+  keptNameNotices.forEach((notice) => {
     if (warnings.indexOf(notice) === -1) {
       warnings.push(notice);
     }

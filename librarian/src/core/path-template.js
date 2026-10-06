@@ -192,125 +192,139 @@ export function resolveFilenameByteBudget({
   };
 }
 
-// Cut a basename down so that basename + extension fits in maxBytes UTF-8
-// bytes, which is the hard per-component limit SMB/network filesystems enforce.
-// maxSegmentLength cannot do this job: it is applied to the basename WITHOUT the
-// extension, so a 254-byte name plus ".mp4" still exceeds the server's limit and
-// the rename is rejected.
+// Reserved headroom for the suffixes appended after the plan: assignSuffixes
+// re-numbers a multi-file scene (" (2)", " (3)", ...) and a cross-scene "_N"
+// can ride on top of that. 5 bytes covers " (9)"; the wider index covers a
+// scene with many files. The room costs nothing unless a trim is needed.
+const SUFFIX_RESERVE = 5 + String(1e6).length;
+
+// The fit re-renders and re-measures, stepping the title cap down by the
+// measured overshoot. A handful of passes absorbs the few bytes the segment
+// sanitizer can shift at the string edges; this bound exists so a path cannot
+// loop, and running out of it is reported, not silently worked around.
+const TRIM_ROUNDS = 16;
+
+const ELLIPSIS_BYTES = 3;
+
+// Turn ONE token value into its fitted form. Values at or under the cap are
+// untouched. A cut always renders from the same source (the render, never the
+// name on disk), the cut edge is tidied before the marker is appended, and the
+// marker therefore lands at the cut edge exactly once — it cannot stack.
+function clipTitleValue(final, cap, ellipsis) {
+  const text = final.text;
+  if (utf8ByteLength(text) <= cap) {
+    return { __byteFinal: true, text: text, hadContent: text !== "" };
+  }
+  const room = ellipsis && cap >= ELLIPSIS_BYTES ? cap - ELLIPSIS_BYTES : cap;
+  let cut = truncateToLimits(text, room, Infinity);
+  cut = cut.replace(/[\s\-_.]+$/, "");
+  const marked = ellipsis && cap >= ELLIPSIS_BYTES ? cut + "..." : cut;
+  return { __byteFinal: true, text: marked, hadContent: true };
+}
+
+// Bring one rendered basename under a byte budget by spending ONLY the value
+// the {title} token renders: the code, the performers, every literal and the
+// folder are final, and the title gives ground.
 //
-// `markEllipsis` decides whether a shortened name is marked with "..." just
-// inside the final "]". The marker is what allows a cut to land in the middle of
-// a "[...]" group instead of having to fall back to a group boundary, which
-// would throw away the whole title.
+// Judging needs a full render — nothing else tells you what the whole path
+// costs — but the cut itself never touches the assembled string. It happens in
+// one token's value, so a template that brackets its tokens and one that does
+// not behave identically: no bracket counting, no group closing, no group
+// peeling, and no marker logic that assumes a particular character follows a
+// trimmed value.
 //
-// The three marker bytes are reserved BEFORE the cut rather than appended after
-// it. Appending afterwards is the obvious implementation and it is wrong: the
-// name is trimmed to exactly maxBytes, the marker pushes it to maxBytes + 3, and
-// the result has to be trimmed again, so the length and the name both move
-// between runs. Reserving up front means the returned name is the finished one.
-//
-// Order of operations:
-//   0. no-op when the name already fits
-//   1. drop a "name (2)"-style disambiguation suffix, reserving room for it
-//      because assignSuffixes re-adds it after this function returns
-//   2. hard-cut on a codepoint boundary, marker included in the budget
-//   3. only if the cut would save almost nothing, peel whole "[...]" groups
-export function truncateBasenameForExtension(
-  basename,
+// The title value that gets cut is its FINAL rendered form (modifiers
+// included), taken from the same pipeline the name was rendered with. The
+// overlay pins that cut value so re-rendering cannot run the modifiers again —
+// re-applying a fixed-width regex= would grow the text straight back over the
+// budget and the cap would never settle.
+export function fitBasenameToBudget({
+  folderPattern,
+  filenamePattern,
+  sceneView,
+  config,
+  matchedIds,
+  currentPath,
+  rendered,
   extension,
-  maxBytes,
-  markEllipsis = true,
-) {
-  const ext = extension || "";
-  const budget = maxBytes - utf8ByteLength(ext);
-  if (!(budget > 0) || utf8ByteLength(basename) <= budget) {
-    return basename;
+  budget,
+  ellipsis,
+}) {
+  const extBytes = utf8ByteLength(extension);
+  const nameBudget = budget - extBytes;
+  if (
+    !(nameBudget > 0) ||
+    utf8ByteLength(rendered.basenameNoExt) <= nameBudget
+  ) {
+    return {
+      basenameNoExt: rendered.basenameNoExt,
+      clipped: false,
+      infeasible: false,
+    };
   }
-  const ELLIPSIS = "...";
-  // " (2)" costs 5 bytes at a 1-digit index; reserve for a wider index too so a
-  // scene with many files still cannot overflow.
-  const suffixReserve = 5 + String(1e6).length;
-  const effBudget = budget - suffixReserve;
-  const ELLIPSIS_BYTES = utf8ByteLength(ELLIPSIS);
-  const fits = (s) => utf8ByteLength(s) <= effBudget;
-  // tidy() strips trailing dots, so it must run BEFORE the ellipsis is added.
-  const tidy = (s) => s.replace(/[\s\-_.]+$/, "");
-  // A cut usually lands between "[" and "]", leaving the group open. Closing it
-  // matters for more than looks: a name with an unclosed group reads as broken,
-  // and the next run's plan then differs from this one's. So close the group
-  // first, then mark it as clipped.
-  const closeGroup = (s) => {
-    const opens = (s.match(/\[/g) || []).length;
-    const closes = (s.match(/\]/g) || []).length;
-    if (opens <= closes) {
-      return s;
-    }
-    return s + "]".repeat(opens - closes);
+  const target = nameBudget - SUFFIX_RESERVE;
+  const titleParts = scanPattern(filenamePattern || "").filter((t) => {
+    return t.name === "title" && !(t.errors && t.errors.length > 0);
+  });
+  const infeasible = (message) => {
+    return {
+      basenameNoExt: rendered.basenameNoExt,
+      clipped: false,
+      infeasible: true,
+      message: message,
+    };
   };
-  const markTrimmed = (s) => {
-    const closed = closeGroup(s);
-    if (!markEllipsis) {
-      return closed;
-    }
-    if (!closed.endsWith("]")) {
-      return closed;
-    }
-    return closed.slice(0, -1) + ELLIPSIS + "]";
-  };
-  const hardCut = (s) => {
-    const cps = Array.from(s);
-    // markTrimmed swaps the final "]" for "...]", which is one byte more than the
-    // "]" it replaces once the closing bracket is accounted for, so the room has
-    // to cover the marker plus that extra byte. With the marker off there is
-    // nothing to reserve.
-    const room = effBudget - (markEllipsis ? ELLIPSIS_BYTES + 1 : 0);
-    let used = 0;
-    let out = "";
-    for (let i = 0; i < cps.length; i++) {
-      const step = utf8ByteLength(cps[i]);
-      if (used + step > room) {
-        break;
-      }
-      used += step;
-      out = cps.slice(0, i + 1).join("");
-    }
-    return markTrimmed(tidy(out));
-  };
-  let candidate = basename;
-  // Step 1: a multi-file scene renames to "name (2)", "name (3)" and so on.
-  const noSuffix = candidate.replace(/ \(\d+\)$/, "");
-  if (noSuffix !== candidate && fits(noSuffix)) {
-    return noSuffix;
+  if (titleParts.length === 0) {
+    return infeasible(
+      "the filename is over its " +
+        budget +
+        "-byte budget and the pattern has no {title} token to shorten. The budget is allowed to spend {title}: add it to the pattern, or raise maxFilenameBytes / maxFullPathBytes",
+    );
   }
-  candidate = noSuffix;
-  if (fits(candidate)) {
-    return tidy(candidate);
-  }
-  // Step 2: cutting inside the last "[...]" group beats dropping that group,
-  // since a partial title still identifies the scene.
-  const cut = hardCut(candidate);
-  if (fits(cut)) {
-    return cut;
-  }
-  // Step 3: the cut saved too little to be worth an ellipsis, so drop whole
-  // trailing groups instead. Nothing was clipped mid-group here, so the
-  // surviving groups get no ellipsis.
-  let guard = 0;
-  while (!fits(candidate) && guard++ < 32) {
-    const lastGroup = candidate.match(/\[[^\]]*\](?!.*\[[^\]]*\])/);
-    if (!lastGroup) {
+  // The overlay replaces the whole token, so every occurrence of {title} in
+  // the pattern renders the same fitted value, and the value cut here is the
+  // first occurrence's final form — the exact text the pattern would have
+  // written before the budget intervened.
+  const tokens = Object.assign(buildTokens(sceneView, config, matchedIds), {
+    current: currentPath ? currentPath.basename : "",
+  });
+  const final = renderTokenValue(tokens.title, titleParts[0]);
+  let cap = utf8ByteLength(final.text);
+  for (let round = 0; round < TRIM_ROUNDS; round++) {
+    const attempt = renderPath(
+      folderPattern,
+      filenamePattern,
+      sceneView,
+      config,
+      matchedIds,
+      currentPath,
+      clipTitleValue(final, cap, ellipsis),
+    );
+    if (!attempt.basenameHasContent) {
+      return infeasible(
+        "cutting {title} to fit the " +
+          budget +
+          "-byte budget would leave the pattern with nothing to name the file with",
+      );
+    }
+    const bytes = utf8ByteLength(attempt.basenameNoExt);
+    if (bytes <= target) {
+      return {
+        basenameNoExt: attempt.basenameNoExt,
+        clipped: true,
+        infeasible: false,
+      };
+    }
+    if (cap <= 0) {
       break;
     }
-    const without = candidate.slice(0, candidate.lastIndexOf(lastGroup[0]));
-    if (!without) {
-      break;
-    }
-    candidate = without;
+    cap = Math.max(cap - (bytes - target), 0);
   }
-  if (fits(candidate)) {
-    return tidy(candidate);
-  }
-  return cut;
+  return infeasible(
+    "even with {title} emptied, the pattern needs more than the " +
+      budget +
+      "-byte budget allows. The fixed parts (code, performers, literals, the folder) own the missing room: raise maxFilenameBytes / maxFullPathBytes, or shorten them",
+  );
 }
 
 function sanitizeSegmentRaw(segment, sanitizeOptions) {
@@ -359,6 +373,17 @@ function resanitize(text, parsed) {
 }
 
 function renderTokenValue(value, parsed) {
+  // A byte-budget trim hands in an already-rendered, already-sanitized value.
+  // Its modifiers have had their turn — re-running them on the cut text could
+  // grow it straight back over the budget (a fixed-width regex= does exactly
+  // that), so the fitted value renders verbatim.
+  if (value && value.__byteFinal) {
+    const text = value.text;
+    return {
+      text: text,
+      filteredEmpty: text === "" && value.hadContent === true,
+    };
+  }
   if (value && value.__list) {
     const pairs = value.entities.map((e) => {
       return { entity: e, name: sanitizeTokenValue(e.name) };
@@ -1488,6 +1513,10 @@ function filenameHasContentWithout(
 // basename stripped of its extension. {current} resolves to a different one of
 // those in each pattern, which is why the token map is rebuilt per pattern
 // rather than shared between them
+//
+// `titleFinal` — when the byte-budget overlay pins a fitted {title} value, both
+// renders see it: a {title} used in a folder pattern must agree with the
+// filename's, and a shorter folder can only help the byte budget.
 export function renderPath(
   folderPattern,
   filenamePattern,
@@ -1495,11 +1524,21 @@ export function renderPath(
   config,
   matchedIds,
   currentPath,
+  titleFinal,
 ) {
   const base = buildTokens(sceneView, config, matchedIds);
   const from = currentPath || { folder: "", basename: "" };
   const tokens = Object.assign({}, base, { current: from.folder });
   const filenameTokens = Object.assign({}, base, { current: from.basename });
+  if (titleFinal) {
+    const overlaid = {
+      __byteFinal: true,
+      text: titleFinal.text,
+      hadContent: titleFinal.hadContent,
+    };
+    tokens.title = overlaid;
+    filenameTokens.title = overlaid;
+  }
   // a kept name is already legal on disk, so replacing its spaces would be the
   // rename that {current} on its own promises not to make. Asking for a
   // modifier is asking for a rename, and that is sanitised like any other

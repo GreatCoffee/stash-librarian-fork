@@ -20,14 +20,20 @@ Turning all of them off reproduces the original plugin's behaviour.
 1. **Shorten overlong filenames.** Every candidate filename is measured before the rename is attempted,
    so a name the filesystem cannot accept is caught in time. Without this, a name that is too long makes
    Windows fail to complete the operation, and the file then becomes awkward to access or move. When the
-   name is still too long, the `{title}` field is clipped on a character boundary, and three ASCII periods
-   (`...`) are placed before the closing bracket so it is obvious that the title was cut rather than being
-   the complete one.
+   name is still too long, only the value the `{title}` token renders is clipped (always on a character
+   boundary), and three ASCII periods (`...`) are appended to the end of that clipped value — the scene's
+   code, performer names, and every fixed part of the pattern always come out whole. Because the marker is
+   appended to the title value itself, no template character is ever inspected: a pattern that brackets its
+   tokens and one that does not behave the same.
+
+   If the budget is so tight that not even an emptied title leaves a usable name, the planner **refuses to
+   rename** and reports the scene instead of writing a broken or nameless file. A name kept with `{current}`
+   is not rendered from metadata at all, so it is never cut; when it sits over the budget it is left byte
+   for byte and the plan reports it.
 
 2. **Mark shortened names.** A child switch of the first, so there is a way to shorten without the marker.
-   The marker takes three bytes, and they are reserved *before* the cut rather than appended after it —
-   appending afterwards would push the name back over the limit and require a second trim, which makes the
-   name differ between runs.
+   The marker is appended once at the cut edge; it cannot stack, because every fit pass starts over from
+   the original rendered title rather than from the name a previous pass produced.
 
 3. **Also limit the total path length.** The filename limit above applies to one path component, which is
    only the last segment. The directories above a file count against the same limit but are invisible to
@@ -78,12 +84,16 @@ and make sure you have a working backup of your Stash database first.
 
 1. **截短过长的文件名。** 每个候选文件名都会在真正改名之前先被测量，从而及时发现文件系统无法接受的名字。
    如果没有这一步，过长的名字会让 Windows 无法完成操作，文件随后也会变得难以访问和移动。名字仍然过长时，
-   `{title}` 会在字符边界处被裁短，并在结尾的 `]` 之前加上三个英文句号（`...`），以此明确表示标题是被截短的，
-   而非完整标题。
+   只有 `{title}` 这个 token 渲染出的值会被裁短（始终按字符边界裁），并在裁短值末尾追加三个英文句号
+   （`...`）——作品的编号、演员名单、模板里的固定文字永远完整。标记是加在 title 值本身末尾的，因此
+   整个过程不检查任何模板字符：模板带不带方括号，行为一致。
 
-2. **截短时加省略号。** 这是第 1 项的子开关，因此可以只裁短而不加标记。标记本身占三个字节，这三个字节是在
-   裁剪**之前**预留的，而不是裁完再补上去——补上去会让名字重新超限、必须再裁一次，而这就导致同一个文件在
-   不同轮次里算出不同的名字，文件会来回移动。
+   如果预算紧到连清空标题都凑不出一个能用的名字，规划器会**拒绝改名**并对该条目报错，而不是写出一个损坏
+   或无名的文件。用 `{current}` 保留的名字根本不是从元数据渲染出来的，所以永远不会被裁；它超预算时会
+   原样保留，并在规划结果里报告一条警告。
+
+2. **截短时加省略号。** 这是第 1 项的子开关，因此可以只裁短而不加标记。标记只在裁切边缘追加一次，不会
+   叠加——每一轮都从原始渲染标题重新计算，而不是从上一轮的产物里读回。
 
 3. **同时限制完整路径长度。** 上面第 1 项的限制只针对**单个路径分量**，而路径分量只是最后一段。上层目录占用
    同一份额度，但那一层限制看不到目录，因此一旦用文件夹规则把场景放进子目录，原本放得下的名字就放不下了，
