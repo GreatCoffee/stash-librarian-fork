@@ -149,18 +149,29 @@ function truncateToLimits(str, maxBytes, maxUtf16Units) {
 // extension, so a 254-byte name plus ".mp4" still exceeds the server's limit and
 // the rename is rejected.
 //
-// Anything this shortens gets a "..." just inside the final "]", so a clipped
-// title is never mistaken for the real one. That marker is what allows a cut to
-// land in the middle of a "[...]" group instead of having to fall back to a group
-// boundary, which would throw away the whole title.
+// `markEllipsis` decides whether a shortened name is marked with "..." just
+// inside the final "]". The marker is what allows a cut to land in the middle of
+// a "[...]" group instead of having to fall back to a group boundary, which
+// would throw away the whole title.
+//
+// The three marker bytes are reserved BEFORE the cut rather than appended after
+// it. Appending afterwards is the obvious implementation and it is wrong: the
+// name is trimmed to exactly maxBytes, the marker pushes it to maxBytes + 3, and
+// the result has to be trimmed again, so the length and the name both move
+// between runs. Reserving up front means the returned name is the finished one.
 //
 // Order of operations:
 //   0. no-op when the name already fits
 //   1. drop a "name (2)"-style disambiguation suffix, reserving room for it
 //      because assignSuffixes re-adds it after this function returns
-//   2. hard-cut on a codepoint boundary, ellipsis included in the budget
+//   2. hard-cut on a codepoint boundary, marker included in the budget
 //   3. only if the cut would save almost nothing, peel whole "[...]" groups
-export function truncateBasenameForExtension(basename, extension, maxBytes) {
+export function truncateBasenameForExtension(
+  basename,
+  extension,
+  maxBytes,
+  markEllipsis = true,
+) {
   const ext = extension || "";
   const budget = maxBytes - utf8ByteLength(ext);
   if (!(budget > 0) || utf8ByteLength(basename) <= budget) {
@@ -176,9 +187,9 @@ export function truncateBasenameForExtension(basename, extension, maxBytes) {
   // tidy() strips trailing dots, so it must run BEFORE the ellipsis is added.
   const tidy = (s) => s.replace(/[\s\-_.]+$/, "");
   // A cut usually lands between "[" and "]", leaving the group open. Closing it
-  // matters for more than looks: the |regex= round-trip on the next run parses
-  // balanced brackets, and an unclosed one makes the next plan differ from this
-  // one. So close the group first, then mark it as clipped.
+  // matters for more than looks: a name with an unclosed group reads as broken,
+  // and the next run's plan then differs from this one's. So close the group
+  // first, then mark it as clipped.
   const closeGroup = (s) => {
     const opens = (s.match(/\[/g) || []).length;
     const closes = (s.match(/\]/g) || []).length;
@@ -189,6 +200,9 @@ export function truncateBasenameForExtension(basename, extension, maxBytes) {
   };
   const markTrimmed = (s) => {
     const closed = closeGroup(s);
+    if (!markEllipsis) {
+      return closed;
+    }
     if (!closed.endsWith("]")) {
       return closed;
     }
@@ -196,10 +210,11 @@ export function truncateBasenameForExtension(basename, extension, maxBytes) {
   };
   const hardCut = (s) => {
     const cps = Array.from(s);
-    // markTrimmed swaps the final "]" for "...]", which is one byte more than
-    // the "]" it replaces once the closing bracket is accounted for, so the
-    // room has to cover the ellipsis plus that extra byte.
-    const room = effBudget - ELLIPSIS_BYTES - 1;
+    // markTrimmed swaps the final "]" for "...]", which is one byte more than the
+    // "]" it replaces once the closing bracket is accounted for, so the room has
+    // to cover the marker plus that extra byte. With the marker off there is
+    // nothing to reserve.
+    const room = effBudget - (markEllipsis ? ELLIPSIS_BYTES + 1 : 0);
     let used = 0;
     let out = "";
     for (let i = 0; i < cps.length; i++) {

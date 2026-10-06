@@ -31,7 +31,7 @@ import { useEntityCounts } from "./useEntityCounts.js";
 import { countableNoun } from "../shared/eligible-entities.js";
 
 const PluginApi = (window as any).PluginApi;
-const { Spinner, Nav, Button } = PluginApi.libraries.Bootstrap;
+const { Spinner, Nav, Button, Form } = PluginApi.libraries.Bootstrap;
 const { faCheckCircle, faTimesCircle } = PluginApi.libraries.FontAwesomeSolid;
 const Icon = PluginApi.components.Icon;
 
@@ -356,6 +356,122 @@ function SettingsPageContent() {
                 id: "librarian.settingsPage.formatting.delimiterPlaceholder",
               })}
             />
+
+            <div className="librarian-formatting-toggles">
+              <div className="setting">
+                <div>
+                  <h3>
+                    {intl.formatMessage({
+                      id: "librarian.settingsPage.formatting.maxFilenameBytes.heading",
+                    })}
+                  </h3>
+                  <div className="sub-heading">
+                    {intl.formatMessage({
+                      id: "librarian.settingsPage.formatting.maxFilenameBytes.subHeading",
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <Form.Switch
+                    id="librarian-setting-max-filename-bytes"
+                    checked={Boolean(config.sanitize && config.sanitize.maxFilenameBytes)}
+                    onChange={() =>
+                      updateConfig({
+                        ...config,
+                        sanitize: {
+                          ...config.sanitize,
+                          // 255 is where an SMB share draws the line: 254 bytes
+                          // is accepted, 256 is refused. Anything else would
+                          // either clip needlessly or fail the rename outright.
+                          maxFilenameBytes: config.sanitize &&
+                            config.sanitize.maxFilenameBytes
+                            ? 0
+                            : 255,
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="setting">
+                <div>
+                  <h3>
+                    {intl.formatMessage({
+                      id: "librarian.settingsPage.formatting.filenameEllipsis.heading",
+                    })}
+                  </h3>
+                  <div className="sub-heading">
+                    {intl.formatMessage({
+                      id: "librarian.settingsPage.formatting.filenameEllipsis.subHeading",
+                    })}
+                  </div>
+                  {intl.formatMessage({
+                    id: "librarian.settingsPage.formatting.filenameEllipsis.requiresShortening",
+                  })}
+                </div>
+                <div>
+                  <Form.Switch
+                    id="librarian-setting-filename-ellipsis"
+                    // Nothing to mark when nothing is being shortened, so the
+                    // toggle follows its parent rather than sitting there inert.
+                    disabled={!(
+                      config.sanitize && config.sanitize.maxFilenameBytes
+                    )}
+                    checked={Boolean(
+                      config.sanitize && config.sanitize.filenameEllipsis !== false,
+                    )}
+                    onChange={() =>
+                      updateConfig({
+                        ...config,
+                        sanitize: {
+                          ...config.sanitize,
+                          filenameEllipsis: !(
+                            config.sanitize &&
+                            config.sanitize.filenameEllipsis !== false
+                          ),
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="setting">
+                <div>
+                  <h3>
+                    {intl.formatMessage({
+                      id: "librarian.settingsPage.formatting.duplicateSceneSuffix.heading",
+                    })}
+                  </h3>
+                  <div className="sub-heading">
+                    {intl.formatMessage({
+                      id: "librarian.settingsPage.formatting.duplicateSceneSuffix.subHeading",
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <Form.Switch
+                    id="librarian-setting-duplicate-scene-suffix"
+                    checked={Boolean(
+                      config.sanitize && config.sanitize.duplicateSceneSuffix,
+                    )}
+                    onChange={() =>
+                      updateConfig({
+                        ...config,
+                        sanitize: {
+                          ...config.sanitize,
+                          duplicateSceneSuffix: config.sanitize &&
+                            config.sanitize.duplicateSceneSuffix
+                            ? 0
+                            : 9,
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
 
             <div className="setting">
               <div>

@@ -84,6 +84,12 @@ export const DEFAULT_CONFIG = {
     // claimed by a different scene. 0 disables disambiguation and restores the
     // old "already belongs to scene N" failure.
     duplicateSceneSuffix: 9,
+    // Whether a shortened name is marked with "..." just inside the final "]",
+    // so a clipped title is not mistaken for the complete one. The three bytes
+    // are reserved inside maxFilenameBytes rather than added afterwards, which
+    // is what stops the name from overshooting the moment the marker lands.
+    // Only meaningful while maxFilenameBytes is non-zero.
+    filenameEllipsis: true,
     spaceReplacement: "",
   },
 };

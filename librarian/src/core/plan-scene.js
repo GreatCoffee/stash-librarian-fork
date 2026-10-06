@@ -523,6 +523,9 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
   const sanitizeOptions = (config && config.sanitize) || {};
   const maxFilenameBytes = Number(sanitizeOptions.maxFilenameBytes) || 0;
   const duplicateSceneSuffix = Number(sanitizeOptions.duplicateSceneSuffix) || 0;
+  // A setting saved by an older build has no filenameEllipsis key at all, so
+  // only an explicit false turns the marker off.
+  const filenameEllipsis = sanitizeOptions.filenameEllipsis !== false;
   // Suffixes and byte trimming interact: adding "_1" can push a name over the
   // limit, and trimming can collapse two distinct names back into one. So the
   // order is disambiguate -> trim -> disambiguate again, and a suffix handed out
@@ -550,6 +553,7 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
         result.basenameNoExt,
         extension,
         maxFilenameBytes,
+        filenameEllipsis,
       );
       if (trimmed !== result.basenameNoExt && duplicateSceneSuffix > 0) {
         // Trimming may have merged two names into one; re-check and let the
