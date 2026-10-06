@@ -1,7 +1,12 @@
-name: Librarian
-description: Organizes your video files on disk according to your specific rules
+# The "(fork)" suffix is the whole point of this line: the plugin list shows
+# several Librarian builds side by side once someone has both installed, and
+# there is no other way to tell them apart at a glance. The id stays "librarian"
+# in manifest, because Stash keys its settings off that and a new id would look
+# like a different plugin and orphan every stored setting.
+name: Librarian (fork)
+description: Organizes your video files on disk according to your specific rules. FORK BUILD - adds a filename byte budget and cross-scene suffixing; not an official release, see the repository for the disclaimer.
 # version: injected from package.json at build time
-url: https://github.com/Maista6969/plugins/tree/main/librarian
+url: https://github.com/GreatCoffee/stash-librarian-fork/tree/main/librarian
 exec:
   - librarian.js
 interface: js
