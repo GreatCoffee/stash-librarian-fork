@@ -12,7 +12,7 @@ before using it.
 
 ### What was changed
 
-Parts of Librarian were rewritten with the help of AI (Space-Bunny) to add four behaviours that the
+Parts of Librarian were rewritten with the help of AI (Space-Bunny + GLM 5.3 Flash) to add four behaviours that the
 original plugin does not have. All four are **off by default and controlled by switches** in the plugin's
 formatting panel, so the behaviour a library gets is decided there rather than by the naming pattern.
 Turning all of them off reproduces the original plugin's behaviour.
@@ -78,7 +78,7 @@ and make sure you have a working backup of your Stash database first.
 
 ### 改了什么
 
-本 fork 使用 AI（Space-Bunny）重写了 Librarian 的部分功能，加入原版所没有的四项行为。这四项**默认全部关闭**，
+本 fork 使用 AI（Space-Bunny + GLM 5.3 Flash）重写了 Librarian 的部分功能，加入原版所没有的四项行为。这四项**默认全部关闭**，
 由插件「格式化」栏目中的开关控制——也就是说，实际得到的行为由设置决定，而不取决于命名模板。四个开关全部关闭时，
 行为与原版一致。
 
