@@ -131,7 +131,9 @@ and make sure you have a working backup of your Stash database first.
 - Forked at commit / Fork 基点：`eb225c5` (Librarian v0.13.3)
 - Changes in / 本 fork 的改动：`601fc85`（字节上限与跨场景消解）、`025c675`（改为开关控制）、
   `fd8c2b5`（完整路径上限）、`0a436d2`（开关值改为 255 并补充代价说明）、
-  `332ca1f`（收敛性测试）、`126c5c1`（插件改名）、`0cd3f65`（本文档）
+  `332ca1f`（收敛性测试）、`126c5c1`（插件改名）、`0cd3f65`（本文档）、
+  `7327c7b`（字节裁剪下沉到 `{title}` 终稿值一层；预算装不下时拒绝改名并报告）、
+  `e6f4e9c`（删除现配置不可达的四处兼容层）
 
 ## Licence / 许可
 
