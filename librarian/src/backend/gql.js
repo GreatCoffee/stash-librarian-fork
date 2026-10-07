@@ -427,10 +427,11 @@ export function gqlFindOwnerOfPath(entityType, path) {
   const result = doQuery(query, {
     entity_filter: { path: { value: path, modifier: "EQUALS" } },
   });
-  // Stash renamed the field: FindScenesResultType exposes `scenes`, while older
-  // builds used `items`. The query aliases it to `items`, so read both and let
-  // whichever exists answer.
+  // Every OWNER_OF_PATH query aliases its list to `items` (:402/:409/:416),
+  // so `items` is the response key on every Stash build — aliases are core
+  // GraphQL. gqlFindEntities instead routes through the registry's per-type
+  // itemsField.
   const found = result && result.result;
-  const rows = found && (found.scenes || found.items);
+  const rows = found && found.items;
   return rows && rows.length > 0 ? rows[0] : null;
 }

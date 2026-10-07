@@ -1,4 +1,4 @@
-import { normalizeSortCriteria, DEFAULT_SORT_CRITERIA } from "./entity-sort.js";
+import { DEFAULT_SORT_CRITERIA } from "./entity-sort.js";
 
 export const PLUGIN_ID = "librarian";
 
@@ -7,17 +7,6 @@ export const PLUGIN_ID = "librarian";
 export const GLOBAL_SETTING_KEYS = ["delimiters", "sanitize"];
 
 export const ENTITY_TYPES = ["scenes", "galleries", "images"];
-
-// Config keys that lived at the top level before per-entity-type sections existed
-const LEGACY_SCENE_KEYS = [
-  "autoRename",
-  "onlyOrganized",
-  "onlyWithStashId",
-  "stashIdEndpoints",
-  "rules",
-  "excludeConditions",
-  "defaultPattern",
-];
 
 const DEFAULT_SCENES = {
   autoRename: false,
@@ -125,55 +114,12 @@ function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// sortBy used to be one of three strings and is now an ordered criteria list.
-// This has to run before mergeDefaults: once the default is an array, a stored
-// string is not an array and mergeDefaults would replace it with the default,
-// silently throwing the user's setting away. Rules need doing by hand too,
-// because mergeDefaults passes arrays straight through and never descends
-function migrateSortBy(raw) {
-  if (!isPlainObject(raw)) {
-    return raw;
-  }
-  const withCriteria = (pattern) => {
-    if (!isPlainObject(pattern) || pattern.sortBy === undefined) {
-      return pattern;
-    }
-    if (Array.isArray(pattern.sortBy)) {
-      return pattern;
-    }
-    return Object.assign({}, pattern, {
-      sortBy: normalizeSortCriteria(pattern.sortBy),
-    });
-  };
-
-  const result = Object.assign({}, raw);
-  ENTITY_TYPES.forEach((type) => {
-    const section = result[type];
-    if (!isPlainObject(section)) {
-      return;
-    }
-    const next = Object.assign({}, section);
-    next.defaultPattern = withCriteria(section.defaultPattern);
-    if (Array.isArray(section.rules)) {
-      next.rules = section.rules.map(withCriteria);
-    }
-    result[type] = next;
-  });
-  return result;
-}
-
-function migrateLegacyConfig(raw) {
-  return migrateSortBy(hoistLegacySections(raw));
-}
-
-// A blank pattern used to mean "keep the folder, or the name, this file already
-// has". That is spelled {current} now, so stored blanks are rewritten once and
-// the special case disappears from the engine. The meaning is identical, which
-// is the whole point: nobody's files move because of this.
-//
-// Runs after the defaults are merged, so a section that never mentioned a
-// pattern at all is migrated along with one that stored an empty string. "/"
-// survives untouched: it is the library root, not a blank.
+// A blank pattern means nothing by itself. "Keep what this file already has" is
+// spelled {current}, and the planner refuses a bare blank with an error that
+// names the token to write, so nothing else needs the old meaning: the pattern
+// editor substitutes {current} the moment a field is cleared, and mergeDefaults
+// gives a section that never named a pattern its own default. "/" survives:
+// it is the library root, not a blank.
 export const KEEP_CURRENT = "{current}";
 
 // Exported because the pattern editor applies the same rule the moment a field
@@ -182,48 +128,6 @@ export const KEEP_CURRENT = "{current}";
 export function blankPatternToCurrent(value) {
   const raw = value == null ? "" : String(value);
   return raw.trim() === "" ? KEEP_CURRENT : value;
-}
-
-// Only rewrites keys the holder actually carries: adding a pattern to a rule
-// that never named one would put words in the user's mouth, and mergeDefaults
-// deliberately leaves rules alone
-function migratePatternHolder(holder) {
-  if (!isPlainObject(holder)) {
-    return holder;
-  }
-  const next = Object.assign({}, holder);
-  ["folderPattern", "filenamePattern"].forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(next, key)) {
-      next[key] = blankPatternToCurrent(next[key]);
-    }
-  });
-  return next;
-}
-
-function migrateBlankPatterns(config) {
-  if (!isPlainObject(config)) {
-    return config;
-  }
-  const result = Object.assign({}, config);
-  Object.keys(result).forEach((key) => {
-    const section = result[key];
-    if (!isPlainObject(section)) {
-      return;
-    }
-    if (
-      !isPlainObject(section.defaultPattern) &&
-      !Array.isArray(section.rules)
-    ) {
-      return;
-    }
-    const next = Object.assign({}, section);
-    next.defaultPattern = migratePatternHolder(next.defaultPattern);
-    if (Array.isArray(next.rules)) {
-      next.rules = next.rules.map(migratePatternHolder);
-    }
-    result[key] = next;
-  });
-  return result;
 }
 
 // Only Scene has the groups field
@@ -270,52 +174,9 @@ function dropSceneOnlyConditions(config) {
   return result;
 }
 
-function hoistLegacySections(raw) {
-  if (!isPlainObject(raw)) {
-    return raw;
-  }
-
-  // Sections already present: any legacy key still lying around is stale, from
-  // a downgrade or a config written by an older version. Drop it rather than
-  // leave it to shadow the sections.
-  if (isPlainObject(raw.scenes)) {
-    const cleaned = {};
-    Object.keys(raw).forEach((key) => {
-      if (LEGACY_SCENE_KEYS.indexOf(key) === -1) {
-        cleaned[key] = raw[key];
-      }
-    });
-    return cleaned;
-  }
-
-  const legacyKeys = LEGACY_SCENE_KEYS.filter((key) => {
-    return Object.prototype.hasOwnProperty.call(raw, key);
-  });
-  if (legacyKeys.length === 0) {
-    return raw;
-  }
-
-  const migrated = {};
-  Object.keys(raw).forEach((key) => {
-    if (LEGACY_SCENE_KEYS.indexOf(key) === -1) {
-      migrated[key] = raw[key];
-    }
-  });
-  migrated.scenes = {};
-  legacyKeys.forEach((key) => {
-    migrated.scenes[key] = raw[key];
-  });
-  return migrated;
-}
-
 export function normalizeConfig(raw) {
   return dropSceneOnlyConditions(
-    migrateBlankPatterns(
-      mergeDefaults(
-        DEFAULT_CONFIG,
-        migrateLegacyConfig(isPlainObject(raw) ? raw : {}),
-      ),
-    ),
+    mergeDefaults(DEFAULT_CONFIG, isPlainObject(raw) ? raw : {}),
   );
 }
 

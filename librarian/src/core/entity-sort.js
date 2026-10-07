@@ -10,24 +10,10 @@
 
 export const SORT_CRITERIA = ["favorite", "rating", "name"];
 
-// What the three original single-value settings mean as criteria lists
-const LEGACY_SORT_BY = {
-  alphabetical: [],
-  favorite_first: ["favorite"],
-  rating: ["rating"],
-};
-
 export const DEFAULT_SORT_CRITERIA = ["name"];
 
 export function normalizeSortCriteria(value) {
-  let raw;
-  if (Array.isArray(value)) {
-    raw = value;
-  } else if (typeof value === "string" && LEGACY_SORT_BY[value]) {
-    raw = LEGACY_SORT_BY[value];
-  } else {
-    raw = [];
-  }
+  const raw = Array.isArray(value) ? value : [];
 
   const criteria = [];
   raw.forEach((name) => {

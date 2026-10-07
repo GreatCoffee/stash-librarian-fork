@@ -1,4 +1,4 @@
-import { sortEntities } from "./entity-sort.js";
+import { sortEntities, DEFAULT_SORT_CRITERIA } from "./entity-sort.js";
 import { customFieldText } from "./custom-fields.js";
 import {
   scanPattern,
@@ -542,7 +542,7 @@ export function buildTokens(sceneView, config, matchedIds) {
   const monthMatch = sceneView.date ? MONTH_RE.exec(sceneView.date) : null;
   const dayMatch = sceneView.date ? DAY_RE.exec(sceneView.date) : null;
 
-  const sortBy = config.sortBy || "alphabetical";
+  const sortBy = Array.isArray(config.sortBy) ? config.sortBy : DEFAULT_SORT_CRITERIA;
   const sortedPerformers = sortEntities(
     sceneView.performers || [],
     sortBy,
@@ -550,9 +550,13 @@ export function buildTokens(sceneView, config, matchedIds) {
       return p.name;
     },
   );
-  const sortedTags = sortEntities(sceneView.tags || [], "alphabetical", (t) => {
-    return t.sort_name || t.name;
-  });
+  const sortedTags = sortEntities(
+    sceneView.tags || [],
+    DEFAULT_SORT_CRITERIA,
+    (t) => {
+      return t.sort_name || t.name;
+    },
+  );
   // compared against the raw name, before sanitizing strips characters the
   // title still contains
   const titleLower = (sceneView.title || "").toLowerCase();

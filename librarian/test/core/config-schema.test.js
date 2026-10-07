@@ -16,8 +16,7 @@ test("a fresh config (no raw at all) returns DEFAULT_CONFIG's own shape", () => 
 
 test("raw values override the matching default, field by field", () => {
   const config = normalizeConfig({
-    onlyOrganized: false,
-    rules: [{ id: "r1" }],
+    scenes: { onlyOrganized: false, rules: [{ id: "r1" }] },
   });
   assert.equal(config.scenes.onlyOrganized, false);
   assert.deepEqual(config.scenes.rules, [{ id: "r1" }]);
@@ -28,7 +27,7 @@ test("raw values override the matching default, field by field", () => {
 
 test("a partially-specified nested object (defaultPattern) is merged field by field, not replaced wholesale", () => {
   const config = normalizeConfig({
-    defaultPattern: { libraryRoot: "/data/main" },
+    scenes: { defaultPattern: { libraryRoot: "/data/main" } },
   });
   assert.equal(config.scenes.defaultPattern.libraryRoot, "/data/main");
   assert.equal(
@@ -38,58 +37,13 @@ test("a partially-specified nested object (defaultPattern) is merged field by fi
   assert.deepEqual(config.scenes.defaultPattern.sortBy, ["name"]);
 });
 
-// mergeDefaults replaces a non-array with an array default, so without the
-// migration running first every stored legacy sortBy would silently revert
-test("a legacy sortBy string migrates to criteria rather than reverting to the default", () => {
+// mergeDefaults replaces a non-array with an array default, so a sortBy that
+// is not a criteria list degrades to the default rather than erroring
+test("a non-criteria sortBy degrades to the default rather than erroring", () => {
   const config = normalizeConfig({
-    scenes: { defaultPattern: { sortBy: "favorite_first" } },
-  });
-  assert.deepEqual(config.scenes.defaultPattern.sortBy, ["favorite", "name"]);
-});
-
-test("legacy sortBy migrates on defaultPattern and inside rules, for every entity type", () => {
-  const config = normalizeConfig({
-    scenes: {
-      defaultPattern: { sortBy: "rating" },
-      rules: [
-        { id: "r1", sortBy: "favorite_first" },
-        { id: "r2", sortBy: "alphabetical" },
-        { id: "r3" },
-      ],
-    },
-    galleries: { defaultPattern: { sortBy: "favorite_first" } },
-    images: { rules: [{ id: "i1", sortBy: "rating" }] },
-  });
-  assert.deepEqual(config.scenes.defaultPattern.sortBy, ["rating", "name"]);
-  assert.deepEqual(config.scenes.rules[0].sortBy, ["favorite", "name"]);
-  assert.deepEqual(config.scenes.rules[1].sortBy, ["name"]);
-  // a rule that never set one is left alone rather than gaining a field
-  assert.equal(config.scenes.rules[2].sortBy, undefined);
-  assert.deepEqual(config.galleries.defaultPattern.sortBy, [
-    "favorite",
-    "name",
-  ]);
-  assert.deepEqual(config.images.rules[0].sortBy, ["rating", "name"]);
-});
-
-test("sortBy migration is idempotent and degrades an unknown value safely", () => {
-  const once = normalizeConfig({
-    scenes: { defaultPattern: { sortBy: "favorite_first" } },
-  });
-  assert.deepEqual(normalizeConfig(once), once);
-  const bogus = normalizeConfig({
     scenes: { defaultPattern: { sortBy: "nonsense" } },
   });
-  assert.deepEqual(bogus.scenes.defaultPattern.sortBy, ["name"]);
-});
-
-test("a pre-sections legacy config gets its sortBy migrated too, after being hoisted", () => {
-  const config = normalizeConfig({
-    defaultPattern: { sortBy: "favorite_first" },
-    rules: [{ id: "r1", sortBy: "rating" }],
-  });
-  assert.deepEqual(config.scenes.defaultPattern.sortBy, ["favorite", "name"]);
-  assert.deepEqual(config.scenes.rules[0].sortBy, ["rating", "name"]);
+  assert.deepEqual(config.scenes.defaultPattern.sortBy, ["name"]);
 });
 
 test("a non-object raw value (null, a string, a number) is treated the same as no config at all", () => {
@@ -104,37 +58,14 @@ test("normalizeConfig is idempotent: re-normalizing an already-normalized config
   assert.deepEqual(twice, once);
 });
 
-test("a pre-sections config has its scene-only top-level keys migrated under config.scenes", () => {
-  const legacy = {
-    autoRename: false,
-    onlyOrganized: false,
-    onlyWithStashId: true,
-    rules: [{ id: "r1" }],
-    excludeConditions: {
-      conditionLogic: "AND",
-      conditions: [{ field: "tag" }],
-    },
-    defaultPattern: { folderPattern: "{studio}", libraryRoot: "/data" },
-  };
-  const config = normalizeConfig(legacy);
-
-  assert.equal(config.scenes.autoRename, false);
-  assert.equal(config.scenes.onlyOrganized, false);
-  assert.equal(config.scenes.onlyWithStashId, true);
-  assert.deepEqual(config.scenes.rules, [{ id: "r1" }]);
-  assert.equal(config.scenes.excludeConditions.conditionLogic, "AND");
-  assert.equal(config.scenes.defaultPattern.libraryRoot, "/data");
-
-  // the legacy keys must not survive at the top level
-  assert.equal(config.rules, undefined);
-  assert.equal(config.defaultPattern, undefined);
-  assert.equal(config.onlyOrganized, undefined);
-});
-
-test("migrating a pre-sections config leaves galleries and images at their defaults", () => {
-  const config = normalizeConfig({ rules: [{ id: "r1" }] });
-  assert.deepEqual(config.galleries, DEFAULT_CONFIG.galleries);
-  assert.deepEqual(config.images, DEFAULT_CONFIG.images);
+test("a hybrid config with stray top-level keys leaves the keys alone; sections stay the source of truth", () => {
+  // entitySettings reads only the known sections, so a stray key like this
+  // neither shadows a section nor gains a meaning
+  const config = normalizeConfig({
+    scenes: { rules: [{ id: "new" }] },
+    rules: [{ id: "stale" }],
+  });
+  assert.deepEqual(config.scenes.rules, [{ id: "new" }]);
 });
 
 test("galleries and images default to a keep-in-place folder pattern", () => {
@@ -143,28 +74,21 @@ test("galleries and images default to a keep-in-place folder pattern", () => {
   assert.equal(config.images.defaultPattern.folderPattern, "{current}");
 });
 
-// A blank pattern used to mean "keep what this file already has". It is spelled
-// {current} now, and stored blanks are rewritten so that nothing moves
-test("blank patterns are migrated to {current}", () => {
+// A blank pattern means nothing by itself. "Keep what this file already has"
+// is spelled {current}: the planner refuses a bare blank with an error naming
+// the token, and the pattern editor substitutes {current} the moment a field
+// is cleared. "/" is the library root, not a blank
+test("the planner refuses a blank pattern instead of guessing", () => {
   const config = normalizeConfig({
-    scenes: {
-      defaultPattern: { folderPattern: "  ", filenamePattern: "" },
-      rules: [{ id: "r1", folderPattern: "", filenamePattern: "{title}" }],
-    },
+    scenes: { defaultPattern: { folderPattern: "  ", filenamePattern: "{title}" } },
   });
-  assert.equal(config.scenes.defaultPattern.folderPattern, "{current}");
-  assert.equal(config.scenes.defaultPattern.filenamePattern, "{current}");
-  assert.equal(config.scenes.rules[0].folderPattern, "{current}");
-  // a rule that said something is left alone
-  assert.equal(config.scenes.rules[0].filenamePattern, "{title}");
-  // "/" is the library root, not a blank, and must survive
-  const root = normalizeConfig({
-    scenes: { defaultPattern: { folderPattern: "/" } },
-  });
-  assert.equal(root.scenes.defaultPattern.folderPattern, "/");
+  // normalizeConfig no longer rewrites stored values: the blank is passed
+  // through as stored, and it is the planner that names the fix
+  assert.equal(config.scenes.defaultPattern.folderPattern, "  ");
+  assert.equal(config.scenes.defaultPattern.filenamePattern, "{title}");
 });
 
-test("global formatting settings are preserved across the migration, not moved into scenes", () => {
+test("global formatting settings stay at the top level, not moved into scenes", () => {
   const config = normalizeConfig({
     rules: [{ id: "r1" }],
     delimiters: { performers: " & ", tags: ", " },
@@ -184,47 +108,6 @@ test("an already-migrated config is left alone rather than migrated a second tim
   assert.deepEqual(config.scenes.rules, [{ id: "kept" }]);
   assert.equal(config.scenes.onlyOrganized, false);
   assert.deepEqual(config.images.rules, [{ id: "img" }]);
-});
-
-test("a config carrying BOTH a scenes section and stray legacy keys keeps the section as the source of truth", () => {
-  const config = normalizeConfig({
-    scenes: { rules: [{ id: "new" }] },
-    rules: [{ id: "stale" }],
-  });
-  assert.deepEqual(config.scenes.rules, [{ id: "new" }]);
-});
-
-test("a pre-sections config migrates its chosen StashID sources too, not just the toggle", () => {
-  // these two are one setting in the UI: migrating onlyWithStashId without
-  // stashIdEndpoints would silently widen the gate back to "any source"
-  const config = normalizeConfig({
-    onlyWithStashId: true,
-    stashIdEndpoints: ["https://fansdb.cc/graphql"],
-  });
-  assert.equal(config.scenes.onlyWithStashId, true);
-  assert.deepEqual(config.scenes.stashIdEndpoints, [
-    "https://fansdb.cc/graphql",
-  ]);
-  assert.equal(config.stashIdEndpoints, undefined);
-});
-
-test("a hybrid config, sections plus leftover flat keys, drops the stale ones", () => {
-  // produced by moving between plugin versions: the flat keys would otherwise
-  // shadow the sections through entitySettings
-  const config = normalizeConfig({
-    scenes: { rules: [{ id: "kept" }] },
-    images: { rules: [{ id: "img" }] },
-    onlyWithStashId: true,
-    stashIdEndpoints: ["https://fansdb.cc/graphql"],
-    rules: [{ id: "stale" }],
-    delimiters: { performers: " & ", tags: ", " },
-  });
-  assert.deepEqual(config.scenes.rules, [{ id: "kept" }]);
-  assert.equal(config.onlyWithStashId, undefined);
-  assert.equal(config.stashIdEndpoints, undefined);
-  assert.equal(config.rules, undefined);
-  // genuinely global settings are untouched
-  assert.equal(config.delimiters.performers, " & ");
 });
 
 test("resetting a section restores its defaults but keeps rules, switched off", () => {

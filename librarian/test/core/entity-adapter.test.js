@@ -10,11 +10,17 @@ function config(overrides) {
       {
         galleries: {
           onlyOrganized: false,
-          defaultPattern: { folderPattern: "", filenamePattern: "{title}" },
+          defaultPattern: {
+            folderPattern: "{current}",
+            filenamePattern: "{title}",
+          },
         },
         images: {
           onlyOrganized: false,
-          defaultPattern: { folderPattern: "", filenamePattern: "{title}" },
+          defaultPattern: {
+            folderPattern: "{current}",
+            filenamePattern: "{title}",
+          },
         },
       },
       overrides,
@@ -181,7 +187,10 @@ test("an image in a folder gallery can still be renamed in place", () => {
   const cfg = normalizeConfig({
     images: {
       onlyOrganized: false,
-      defaultPattern: { folderPattern: "", filenamePattern: "{title}" },
+      defaultPattern: {
+        folderPattern: "{current}",
+        filenamePattern: "{title}",
+      },
     },
   });
   const result = planEntity(folderGalleryImage, cfg, "images");

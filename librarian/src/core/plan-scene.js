@@ -28,6 +28,7 @@ import { disambiguateDuplicateScenes } from "./duplicate-scenes.js";
 import { assignSuffixes } from "./file-ordering.js";
 import { deriveFileTech } from "./file-tech.js";
 import { adapterFor } from "./entity-adapter.js";
+import { DEFAULT_SORT_CRITERIA } from "./entity-sort.js";
 // Only these apply to every type; everything else belongs to a section. Sharing
 // the list stops a stray top-level key, such as one left behind by an older
 // config shape, leaking a scene-only gate into galleries or images.
@@ -224,10 +225,12 @@ export function planEntity(rawScene, config, entityType, stashBoxes, options) {
     ? matchedRule.filenamePattern
     : (settings.defaultPattern && settings.defaultPattern.filenamePattern) ||
       "";
+  // A rule may leave sortBy unset, and the section default always carries one
+  // once normalizeConfig has run; this fallback covers callers that skip it.
   const sortBy =
     (matchedRule && matchedRule.sortBy) ||
     (settings.defaultPattern && settings.defaultPattern.sortBy) ||
-    "alphabetical";
+    DEFAULT_SORT_CRITERIA;
   const renderConfig = Object.assign({}, settings, { sortBy: sortBy });
 
   const patternOptions = { stashBoxes: stashBoxes || null };

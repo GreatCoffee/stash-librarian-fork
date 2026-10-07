@@ -14,13 +14,13 @@ function names(entities) {
   return entities.map((e) => e.name);
 }
 
-test("alphabetical (default) sorts case-insensitively regardless of input order", () => {
+test("name sort (the default) is case-insensitive regardless of input order", () => {
   const entities = [
     { id: "1", name: "Zed" },
     { id: "2", name: "amy" },
     { id: "3", name: "Bo" },
   ];
-  assert.deepEqual(names(sortEntities(entities, "alphabetical")), [
+  assert.deepEqual(names(sortEntities(entities, ["name"])), [
     "amy",
     "Bo",
     "Zed",
@@ -37,14 +37,14 @@ test("alphabetical (default) sorts case-insensitively regardless of input order"
   ]);
 });
 
-test("favorite_first puts every favorite before every non-favorite, alphabetical within each group", () => {
+test("favorites-first puts every favorite before every non-favorite, alphabetical within each group", () => {
   const entities = [
     { id: "1", name: "Zed", favorite: false },
     { id: "2", name: "Amy", favorite: true },
     { id: "3", name: "Bo", favorite: false },
     { id: "4", name: "Cleo", favorite: true },
   ];
-  assert.deepEqual(names(sortEntities(entities, "favorite_first")), [
+  assert.deepEqual(names(sortEntities(entities, ["favorite"])), [
     "Amy",
     "Cleo",
     "Bo",
@@ -52,7 +52,7 @@ test("favorite_first puts every favorite before every non-favorite, alphabetical
   ]);
 });
 
-test("rating sorts highest rating100 first, ties broken alphabetically, unrated entities last (still internally alphabetical)", () => {
+test("ratings sort highest rating100 first, ties broken alphabetically, unrated entities last (still internally alphabetical)", () => {
   const entities = [
     { id: "1", name: "Zed", rating100: 50 },
     { id: "2", name: "Amy", rating100: 90 },
@@ -60,7 +60,7 @@ test("rating sorts highest rating100 first, ties broken alphabetically, unrated 
     { id: "4", name: "Cleo", rating100: 90 },
     { id: "5", name: "Ann", rating100: null },
   ];
-  assert.deepEqual(names(sortEntities(entities, "rating")), [
+  assert.deepEqual(names(sortEntities(entities, ["rating"])), [
     "Amy",
     "Cleo",
     "Zed",
@@ -74,7 +74,7 @@ test("rating degrades gracefully to alphabetical when NO entity has a rating100 
     { id: "1", name: "Zed" },
     { id: "2", name: "Amy" },
   ];
-  assert.deepEqual(names(sortEntities(entities, "rating")), ["Amy", "Zed"]);
+  assert.deepEqual(names(sortEntities(entities, ["rating"])), ["Amy", "Zed"]);
 });
 
 test("a custom getName is used for the alphabetical ordering/tiebreak, not always .name", () => {
@@ -84,15 +84,15 @@ test("a custom getName is used for the alphabetical ordering/tiebreak, not alway
   ];
   const sorted = sortEntities(
     entities,
-    "alphabetical",
+    ["name"],
     (e) => e.sort_name || e.name,
   );
   assert.deepEqual(names(sorted), ["Zzz Tag", "Aaa Tag"]);
 });
 
 test("handles an empty or missing entity list without throwing", () => {
-  assert.deepEqual(sortEntities([], "favorite_first"), []);
-  assert.deepEqual(sortEntities(undefined, "rating"), []);
+  assert.deepEqual(sortEntities([], ["favorite"]), []);
+  assert.deepEqual(sortEntities(undefined, ["rating"]), []);
 });
 
 test("criteria compose: favourites first, best-rated among them, then alphabetical", () => {
@@ -115,27 +115,6 @@ test("criteria compose: favourites first, best-rated among them, then alphabetic
     "Wendy",
     "Bo",
   ]);
-});
-
-test("each legacy string is exactly equivalent to its criteria list", () => {
-  const entities = [
-    { id: "1", name: "Zed", favorite: false, rating100: 50 },
-    { id: "2", name: "Amy", favorite: true, rating100: 90 },
-    { id: "3", name: "Bo", favorite: false, rating100: null },
-    { id: "4", name: "Cleo", favorite: true, rating100: 90 },
-  ];
-  assert.deepEqual(
-    sortEntities(entities, ["favorite"]),
-    sortEntities(entities, "favorite_first"),
-  );
-  assert.deepEqual(
-    sortEntities(entities, ["rating"]),
-    sortEntities(entities, "rating"),
-  );
-  assert.deepEqual(
-    sortEntities(entities, ["name"]),
-    sortEntities(entities, "alphabetical"),
-  );
 });
 
 test("rating100 of 0 counts as rated and outranks unrated", () => {
@@ -209,11 +188,9 @@ test("normalizeSortCriteria always ends with name, and describeSortCriteria says
     "rating",
     "name",
   ]);
-  assert.deepEqual(normalizeSortCriteria("favorite_first"), [
-    "favorite",
-    "name",
-  ]);
+  // a string is not a criteria list; only the array form is recognized
   assert.deepEqual(normalizeSortCriteria(undefined), ["name"]);
+  assert.deepEqual(normalizeSortCriteria("favorite_first"), ["name"]);
   assert.equal(
     describeSortCriteria(intl, ["favorite", "rating"]),
     "Sorted favourites first, highest-rated first, then alphabetically.",

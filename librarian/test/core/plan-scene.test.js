@@ -21,20 +21,43 @@ import {
   performerNamedInTitleScene,
 } from "../fixtures/scenes.js";
 
+// The planner speaks per-section config. The fixture builder spells the
+// scenes section directly rather than carrying scene keys at the top level.
+const SCENE_KEYS = [
+  "autoRename",
+  "onlyOrganized",
+  "onlyWithStashId",
+  "stashIdEndpoints",
+  "rules",
+  "excludeConditions",
+  "defaultPattern",
+];
+
 function baseConfig(overrides) {
-  const merged = Object.assign({}, overrides);
-  merged.defaultPattern = Object.assign(
-    { libraryRoot: "/data" },
-    overrides && overrides.defaultPattern,
-  );
-  if (Array.isArray(merged.rules)) {
-    merged.rules = merged.rules.map((rule) => {
+  const src = overrides || {};
+  const rest = {};
+  const scenes = {};
+  Object.keys(src).forEach((key) => {
+    if (SCENE_KEYS.indexOf(key) !== -1) {
+      scenes[key] = src[key];
+    } else {
+      rest[key] = src[key];
+    }
+  });
+  if (Array.isArray(scenes.rules)) {
+    scenes.rules = scenes.rules.map((rule) => {
       return rule.libraryRoot
         ? rule
         : Object.assign({}, rule, { libraryRoot: "/data" });
     });
   }
-  return normalizeConfig(merged);
+  rest.scenes = Object.assign(scenes, {
+    defaultPattern: Object.assign(
+      { libraryRoot: "/data" },
+      scenes.defaultPattern,
+    ),
+  });
+  return normalizeConfig(rest);
 }
 
 test("normal organized single-file scene renders via the default pattern", () => {
@@ -444,7 +467,7 @@ test("a file metadata pattern is fine when the scene ALSO has real metadata cont
   };
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{resolution} - {title}",
     },
   });
@@ -736,7 +759,7 @@ test("an optional per-file token missing on only ONE file renders empty for that
   };
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{title} {phash?}",
     },
   });
@@ -773,7 +796,7 @@ test("a rule's own sortBy controls {performers} ordering for ITS pattern, indepe
             enabled: true,
             conditionLogic: "AND",
             conditions: [{ field: "tag", op: "any_of", value: ["t1"] }],
-            folderPattern: "",
+            folderPattern: "{current}",
             filenamePattern: "{performers}",
             sortBy: sortBy,
           },
@@ -783,11 +806,11 @@ test("a rule's own sortBy controls {performers} ordering for ITS pattern, indepe
   }
 
   assert.equal(
-    planWithSortBy("favorite_first").files[0].basename,
+    planWithSortBy(["favorite"]).files[0].basename,
     "Wendy, Bo, Zed.mp4",
   );
   assert.equal(
-    planWithSortBy("rating").files[0].basename,
+    planWithSortBy(["rating"]).files[0].basename,
     "Zed, Wendy, Bo.mp4",
   );
   assert.equal(
@@ -795,7 +818,7 @@ test("a rule's own sortBy controls {performers} ordering for ITS pattern, indepe
     "Bo, Wendy, Zed.mp4",
   );
 
-  // the composable form, and the combination the legacy strings could not express:
+  // the composable form the criteria list is for:
   // Wendy is the only favourite, then the rest by rating
   assert.equal(
     planWithSortBy(["favorite", "rating"]).files[0].basename,
@@ -826,7 +849,7 @@ test("a rule's sort criteria win over the default pattern's", () => {
   };
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{performers}",
       sortBy: ["rating"],
     },
@@ -836,7 +859,7 @@ test("a rule's sort criteria win over the default pattern's", () => {
         enabled: true,
         conditionLogic: "AND",
         conditions: [{ field: "tag", op: "any_of", value: ["t1"] }],
-        folderPattern: "",
+        folderPattern: "{current}",
         filenamePattern: "{performers}",
         sortBy: ["favorite"],
       },
@@ -897,21 +920,23 @@ test("a scene matching no rule uses the default pattern's own libraryRoot", () =
 
 test("a matched rule with NO libraryRoot of its own errors as 'no_library_root', not a silent skip or a bad path", () => {
   const config = normalizeConfig({
-    defaultPattern: {
-      folderPattern: "/",
-      filenamePattern: "{title}",
-      libraryRoot: "/data/main",
-    },
-    rules: [
-      {
-        id: "unrooted-rule",
-        enabled: true,
-        conditionLogic: "AND",
-        conditions: [{ field: "tag", op: "any_of", value: ["t1"] }],
+    scenes: {
+      defaultPattern: {
         folderPattern: "/",
         filenamePattern: "{title}",
+        libraryRoot: "/data/main",
       },
-    ],
+      rules: [
+        {
+          id: "unrooted-rule",
+          enabled: true,
+          conditionLogic: "AND",
+          conditions: [{ field: "tag", op: "any_of", value: ["t1"] }],
+          folderPattern: "/",
+          filenamePattern: "{title}",
+        },
+      ],
+    },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.status, "error");
@@ -922,8 +947,7 @@ test("a matched rule with NO libraryRoot of its own errors as 'no_library_root',
 
 test("a scene falling through to a default pattern with NO libraryRoot errors as 'no_library_root' too", () => {
   const config = normalizeConfig({
-    defaultPattern: { folderPattern: "/", filenamePattern: "{title}" },
-    rules: [],
+    scenes: { defaultPattern: { folderPattern: "/", filenamePattern: "{title}" }, rules: [] },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.status, "error");
@@ -936,11 +960,13 @@ test("a Windows file already at its target reports unchanged, not 'will move'", 
   // Regression: splitPath only split on "/", so on Windows the whole path became
   // the basename, the current folder was empty, and every file looked like a move
   const config = normalizeConfig({
-    onlyOrganized: false,
-    defaultPattern: {
-      folderPattern: "{studio}",
-      filenamePattern: "{studio} - {title}",
-      libraryRoot: "C:\\Stash\\Library",
+    scenes: {
+      onlyOrganized: false,
+      defaultPattern: {
+        folderPattern: "{studio}",
+        filenamePattern: "{studio} - {title}",
+        libraryRoot: "C:\\Stash\\Library",
+      },
     },
   });
   const scene = {
@@ -972,11 +998,13 @@ test("a Windows file already at its target reports unchanged, not 'will move'", 
 
 test("a library root stored with forward slashes still matches a Windows file path", () => {
   const config = normalizeConfig({
-    onlyOrganized: false,
-    defaultPattern: {
-      folderPattern: "{studio}",
-      filenamePattern: "{studio} - {title}",
-      libraryRoot: "C:/Stash/Library",
+    scenes: {
+      onlyOrganized: false,
+      defaultPattern: {
+        folderPattern: "{studio}",
+        filenamePattern: "{studio} - {title}",
+        libraryRoot: "C:/Stash/Library",
+      },
     },
   });
   const scene = {
@@ -1056,7 +1084,7 @@ test("chosen sources are ignored while onlyWithStashId is off", () => {
 
 test("a blank folder pattern keeps the file in its current folder rather than flattening to the library root", () => {
   const config = baseConfig({
-    defaultPattern: { folderPattern: "", filenamePattern: "{title}" },
+    defaultPattern: { folderPattern: "{current}", filenamePattern: "{title}" },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.status, "ok");
@@ -1066,7 +1094,7 @@ test("a blank folder pattern keeps the file in its current folder rather than fl
 
 test("a blank folder pattern moves by parent folder id so the path is never re-parsed", () => {
   const config = baseConfig({
-    defaultPattern: { folderPattern: "", filenamePattern: "{title}" },
+    defaultPattern: { folderPattern: "{current}", filenamePattern: "{title}" },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.files[0].folderId, "f-old");
@@ -1074,8 +1102,10 @@ test("a blank folder pattern moves by parent folder id so the path is never re-p
 
 test("a blank folder pattern needs no libraryRoot, since the file never leaves its folder", () => {
   const config = normalizeConfig({
-    defaultPattern: { folderPattern: "", filenamePattern: "{title}" },
-    rules: [],
+    scenes: {
+      defaultPattern: { folderPattern: "{current}", filenamePattern: "{title}" },
+      rules: [],
+    },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.status, "ok");
@@ -1084,7 +1114,7 @@ test("a blank folder pattern needs no libraryRoot, since the file never leaves i
 
 test("a blank folder pattern reports unchanged when the basename already matches", () => {
   const config = baseConfig({
-    defaultPattern: { folderPattern: "", filenamePattern: "old" },
+    defaultPattern: { folderPattern: "{current}", filenamePattern: "old" },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.files[0].basename, "old.mp4");
@@ -1116,7 +1146,7 @@ test("a non-empty folder pattern that renders empty errors instead of silently f
 
 test("whitespace-only folder patterns keep files put rather than creating a folder named _", () => {
   const config = baseConfig({
-    defaultPattern: { folderPattern: "   ", filenamePattern: "{title}" },
+    defaultPattern: { folderPattern: "{current}", filenamePattern: "{title}" },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.status, "ok");
@@ -1125,7 +1155,7 @@ test("whitespace-only folder patterns keep files put rather than creating a fold
 
 test("a blank filename pattern keeps each file's own name while the folder pattern still moves it", () => {
   const config = baseConfig({
-    defaultPattern: { folderPattern: "{studio}", filenamePattern: "" },
+    defaultPattern: { folderPattern: "{studio}", filenamePattern: "{current}" },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.status, "ok");
@@ -1136,7 +1166,7 @@ test("a blank filename pattern keeps each file's own name while the folder patte
 
 test("whitespace-only filename patterns keep the current name rather than renaming to _", () => {
   const config = baseConfig({
-    defaultPattern: { folderPattern: "{studio}", filenamePattern: "   " },
+    defaultPattern: { folderPattern: "{studio}", filenamePattern: "{current}" },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.files[0].basename, "old.mp4");
@@ -1156,7 +1186,7 @@ test("a kept filename skips sanitization, which would otherwise rename the very 
     scene,
     baseConfig({
       sanitize: { spaceReplacement: "." },
-      defaultPattern: { folderPattern: "{studio}", filenamePattern: "" },
+      defaultPattern: { folderPattern: "{studio}", filenamePattern: "{current}" },
     }),
   );
   assert.equal(kept.files[0].basename, "my file.mp4");
@@ -1182,7 +1212,7 @@ test("a blank filename pattern does not trip the guards that only judge a render
     files: [{ id: "40", path: "/data/old/untitled.mp4" }],
   };
   const config = baseConfig({
-    defaultPattern: { folderPattern: "/", filenamePattern: "" },
+    defaultPattern: { folderPattern: "/", filenamePattern: "{current}" },
   });
   const result = planScene(scene, config);
   assert.equal(result.status, "ok");
@@ -1204,7 +1234,7 @@ test("kept names converging on one folder from different folders are still suffi
     ],
   };
   const config = baseConfig({
-    defaultPattern: { folderPattern: "{studio}", filenamePattern: "" },
+    defaultPattern: { folderPattern: "{studio}", filenamePattern: "{current}" },
   });
   const byId = Object.fromEntries(
     planScene(scene, config).files.map((f) => [f.fileId, f.basename]),
@@ -1227,7 +1257,7 @@ test("kept names that differ only by extension are left alone, since they never 
     ],
   };
   const config = baseConfig({
-    defaultPattern: { folderPattern: "{studio}", filenamePattern: "" },
+    defaultPattern: { folderPattern: "{studio}", filenamePattern: "{current}" },
   });
   const byId = Object.fromEntries(
     planScene(scene, config).files.map((f) => [f.fileId, f.basename]),
@@ -1238,7 +1268,7 @@ test("kept names that differ only by extension are left alone, since they never 
 
 test("blank folder AND filename patterns are skipped rather than planned as a no-op", () => {
   const config = baseConfig({
-    defaultPattern: { folderPattern: "", filenamePattern: "" },
+    defaultPattern: { folderPattern: "{current}", filenamePattern: "{current}" },
   });
   const result = planScene(normalOrganizedScene, config);
   assert.equal(result.status, "skipped");
@@ -1254,8 +1284,8 @@ test("an all-blank rule holds its matches back from the default pattern, which i
         enabled: true,
         conditionLogic: "AND",
         conditions: [{ field: "tag", op: "any_of", value: ["t1"] }],
-        folderPattern: "",
-        filenamePattern: "",
+        folderPattern: "{current}",
+        filenamePattern: "{current}",
       },
     ],
     defaultPattern: { folderPattern: "{studio}", filenamePattern: "{title}" },
@@ -1326,7 +1356,7 @@ test("missing-data messages name the entity type, not always 'scene'", () => {
     images: {
       onlyOrganized: false,
       defaultPattern: {
-        folderPattern: "",
+        folderPattern: "{current}",
         filenamePattern: "{title}",
         libraryRoot: "",
       },
@@ -1334,7 +1364,7 @@ test("missing-data messages name the entity type, not always 'scene'", () => {
     galleries: {
       onlyOrganized: false,
       defaultPattern: {
-        folderPattern: "",
+        folderPattern: "{current}",
         filenamePattern: "{title}",
         libraryRoot: "",
       },
@@ -1377,7 +1407,7 @@ test("missing-data messages name the entity type, not always 'scene'", () => {
 test("a mistyped modifier refuses to rename instead of silently filtering to nothing", () => {
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{performers|gender=femal}",
     },
   });
@@ -1405,7 +1435,7 @@ test("an unknown modifier is caught in the folder pattern too", () => {
 test("an unknown or malformed token still renders literally rather than blocking", () => {
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{title} {nonsense} {studio bogus}",
     },
   });
@@ -1418,7 +1448,7 @@ test("an unknown or malformed token still renders literally rather than blocking
 test("a valid gender filter plans normally", () => {
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{performers|gender=female?}-{title}",
     },
   });
@@ -1443,7 +1473,7 @@ function twoIdScene() {
 test("a pattern can carry StashIDs from several sources at once", () => {
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{stash_id|from=StashDB}-{stash_id|from=ThePornDB}",
     },
   });
@@ -1455,7 +1485,7 @@ test("a pattern can carry StashIDs from several sources at once", () => {
 test("a from= naming no configured stash-box refuses to rename", () => {
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{stash_id|from=Bogus}",
     },
   });
@@ -1467,7 +1497,7 @@ test("a from= naming no configured stash-box refuses to rename", () => {
 test("omitting the stash-box list fails safe rather than renaming", () => {
   const config = baseConfig({
     defaultPattern: {
-      folderPattern: "",
+      folderPattern: "{current}",
       filenamePattern: "{stash_id|from=StashDB}",
     },
   });
@@ -1478,7 +1508,7 @@ test("omitting the stash-box list fails safe rather than renaming", () => {
 
 test("with a single configured stash-box, {stash_id} works with nothing configured", () => {
   const config = baseConfig({
-    defaultPattern: { folderPattern: "", filenamePattern: "{stash_id}" },
+    defaultPattern: { folderPattern: "{current}", filenamePattern: "{stash_id}" },
   });
   const oneBox = [STASH_BOXES[0]];
   assert.equal(
@@ -1603,7 +1633,7 @@ test("{current} on both sides is the keep-in-place pair, reported as unchanged",
 
 test("a literal blank pattern is refused, naming the token to write instead", () => {
   const blank = baseConfig({
-    defaultPattern: { folderPattern: "{studio}", filenamePattern: "" },
+    defaultPattern: { folderPattern: "{studio}", filenamePattern: "{current}" },
   });
   // normalizeConfig migrates blanks, so reach past it to simulate a hand-edit
   blank.scenes.defaultPattern.filenamePattern = "";
